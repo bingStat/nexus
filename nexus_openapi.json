@@ -7,7 +7,12 @@
   },
   "servers": [
     {
-      "url": "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1"
+      "url": "https://nexus.bings.app/rest/v1",
+      "description": "Nexus 主域名控制节点 (推荐)"
+    },
+    {
+      "url": "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1",
+      "description": "Supabase Cloud 备用节点"
     }
   ],
   "security": [
