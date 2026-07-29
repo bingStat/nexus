@@ -22,7 +22,7 @@
 1. **`getOnlineDevices` (`GET /devices`)**:
    查询在线节点状态与 `last_seen` 心跳。
 2. **`executeCommand` (`POST /commands`)**:
-   必须自生成随机 UUID v4 作为 `id`，下发命令至 `target_device`（`status="pending"`）。
+   必须自生成随机 UUID v4 作为 `id`，下发命令至 `target_device`（`status="pending"`），可选指定 `timeout_ms`（默认 30000 毫秒）。
 3. **`getCommandResults` (`GET /commands?id=eq.<uuid>`)**:
    按 `id=eq.<uuid>` 格式轮询任务状态（`pending` -> `running` -> `completed`/`failed`）与 `output` 控制台回执。
 
@@ -30,7 +30,7 @@
 
 ## 📋 ChatGPT Custom GPT Actions OpenAPI 3.1.0 Specification
 
-在 **ChatGPT Custom GPT Builder** 的 Actions Schema 中，直接粘贴以下无冗余字段的标准架构：
+在 **ChatGPT Custom GPT Builder** 的 Actions Schema 中，粘贴以下包含 `timeout_ms` 超时控制的标准架构：
 
 ```json
 {
@@ -112,6 +112,11 @@
                     "type": "string",
                     "description": "固定传入 'pending'",
                     "default": "pending"
+                  },
+                  "timeout_ms": {
+                    "type": "integer",
+                    "description": "自定义命令超时限制毫秒数（默认 30000ms）",
+                    "default": 30000
                   }
                 },
                 "required": ["id", "command", "target_device", "status"]
@@ -197,11 +202,11 @@
 > 1. 调用 `executeCommand` (`target_device="victus"`, `command="Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 5 -Property Name, ID, @{N='Memory(MB)';E={[math]::Round($_.WorkingSet64/1MB,2)}}"`)。
 > 2. 轮询读取 `output` 展现。
 
-### 场景 3：HPC 超算任务管理
-> **用户**：“查一下我在 VSC 超算上排队的 SLURM 任务。”
+### 场景 3：HPC 超算长任务下发 (指定 timeout_ms)
+> **用户**：“在 VSC 超算上帮我提交并运行编译任务，超时时间设为 5 分钟。”
 > **AI 动作**：
-> 1. 调用 `executeCommand` (`target_device="vsc"`, `command="squeue -u $USER"`)。
-> 2. 格式化输出任务队列。
+> 1. 调用 `executeCommand` (`target_device="vsc"`, `command="make -j8", timeout_ms=300000`)。
+> 2. 轮询读取任务状态与编译回执。
 
 ---
 
