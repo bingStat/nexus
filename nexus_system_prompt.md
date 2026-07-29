@@ -30,7 +30,7 @@
 
 ## 📋 ChatGPT Custom GPT Actions OpenAPI 3.1.0 Specification
 
-在 **ChatGPT Custom GPT Builder** 的 Actions Schema 中，粘贴以下单域名规范（**使用全局稳定直连端点 `https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1`**）：
+在 **ChatGPT Custom GPT Builder** 的 Actions Schema 中，直接粘贴以下无冗余字段的标准架构：
 
 ```json
 {
@@ -112,10 +112,6 @@
                     "type": "string",
                     "description": "固定传入 'pending'",
                     "default": "pending"
-                  },
-                  "timeout_ms": {
-                    "type": "integer",
-                    "default": 30000
                   }
                 },
                 "required": ["id", "command", "target_device", "status"]
