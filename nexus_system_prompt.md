@@ -30,7 +30,7 @@
 
 ## 📋 ChatGPT Custom GPT Actions OpenAPI 3.1.0 Specification
 
-当在 **ChatGPT Custom GPT Builder** 的 Actions Schema 中添加配置时，直接粘贴以下结构（**默认优先指向 `https://nexus.bings.app/rest/v1` 自有域名，并提供 Supabase Cloud 备用**）：
+在 **ChatGPT Custom GPT Builder** 的 Actions Schema 中，粘贴以下单域名规范（**使用全局稳定直连端点 `https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1`**）：
 
 ```json
 {
@@ -42,12 +42,8 @@
   },
   "servers": [
     {
-      "url": "https://nexus.bings.app/rest/v1",
-      "description": "Nexus 主域名控制节点 (推荐)"
-    },
-    {
       "url": "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1",
-      "description": "Supabase Cloud 备用节点"
+      "description": "Nexus Cluster REST API"
     }
   ],
   "security": [
