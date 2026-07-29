@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexus FastMCP Server (SSE HTTP Service)
+After=network.target
+
+[Service]
+Type=simple
+User=bing
+WorkingDirectory=/home/bing/nexus-backend
+Environment="PATH=/home/bing/miniconda3/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="NEXUS_API_URL=https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1"
+Environment="NEXUS_API_KEY="
+Environment="NEXUS_MCP_TOKEN=your_secure_mcp_token"
+Environment="PORT=8000"
+ExecStart=/home/bing/miniconda3/bin/python3 -m mcp_server.app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

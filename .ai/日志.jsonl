@@ -1,0 +1,1 @@
+{"timestamp": "2026-07-30T00:08:30+02:00", "event": "rebrand_and_mcp_server", "details": "Cleaned up desktop-commander legacy terms to nexus. Built dual-mode FastMCP server (STDIO and SSE) in mcp_server/ with security interceptor and Supabase Cloud integration."}
