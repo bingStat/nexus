@@ -135,6 +135,13 @@ $ScriptPath = "$AgentDir\run_win_agent.py"
 $LogPath = "$AgentDir\agent.log"
 Start-Process -FilePath $PyPath -ArgumentList "$ScriptPath" -RedirectStandardOutput $LogPath -WindowStyle Hidden
 
+$StartupScript = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\NexusAgent.vbs"
+$VbsCode = @"
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "cmd.exe /c """"$PyPath"""" """"$ScriptPath"""" > """"$LogPath"""""", 0, False
+"@
+Set-Content -Path $StartupScript -Value $VbsCode -Encoding ASCII
+
 Write-Host "==================================================" -ForegroundColor Green
 Write-Host " Nexus Agent successfully deployed & running for [$NodeName]!" -ForegroundColor Green
 Write-Host " Log file: $LogPath" -ForegroundColor Green

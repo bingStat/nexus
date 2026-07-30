@@ -22,6 +22,9 @@ fi
 pkill -f "dc-backend" 2>/dev/null || true
 pkill -f "dc_backend" 2>/dev/null || true
 
+# Cleanup legacy crontabs
+(crontab -l 2>/dev/null | grep -v "dc-backend\|dc-agent\|desktop-commander\|agent_v2.py" || true) | crontab - 2>/dev/null || true
+
 mkdir -p "$AGENT_DIR"
 
 if ! command -v python3 &> /dev/null; then
@@ -153,7 +156,13 @@ EOF
 
 pkill -f "$AGENT_DIR/agent.py" 2>/dev/null || true
 
-nohup env DEVICE_NAME="$NODE_NAME" DEVICE_ID="$NODE_NAME" NEXUS_API_KEY="$API_KEY" NEXUS_API_URL="$API_URL" python3 "$AGENT_DIR/agent.py" > "$AGENT_DIR/agent.log" 2>&1 &
+START_CMD="nohup env DEVICE_NAME=\"$NODE_NAME\" DEVICE_ID=\"$NODE_NAME\" NEXUS_API_KEY=\"$API_KEY\" NEXUS_API_URL=\"$API_URL\" python3 \"$AGENT_DIR/agent.py\" > \"$AGENT_DIR/agent.log\" 2>&1 &"
+
+# Install into crontab for persistence
+(crontab -l 2>/dev/null | grep -v "$AGENT_DIR/agent.py" ; echo "@reboot $START_CMD") | crontab -
+
+# Start it now
+eval "$START_CMD"
 
 echo "=================================================="
 echo " 🎉 Nexus Agent successfully deployed & running for [$NODE_NAME]!"
