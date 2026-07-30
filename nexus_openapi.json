@@ -21,7 +21,7 @@
       "get": {
         "summary": "获取集群设备状态",
         "description": "获取当前所有已连接并在线的机器列表及最后心跳时间 (last_seen)",
-        "operationId": "getOnlineDevices",
+        "operationId": "list_devices",
         "parameters": [
           {
             "name": "select",
@@ -44,7 +44,7 @@
       "post": {
         "summary": "下发 Shell / PowerShell 命令",
         "description": "向指定目标设备下发 Shell 或 PowerShell 指令，自动入队并触发异步认领",
-        "operationId": "executeCommand",
+        "operationId": "execute_command",
         "parameters": [
           {
             "name": "Prefer",
@@ -105,7 +105,7 @@
       "get": {
         "summary": "查询指令执行结果",
         "description": "轮询命令的执行状态（pending -> running -> completed/failed）及输出结果 (output)",
-        "operationId": "getCommandResults",
+        "operationId": "get_command_results",
         "parameters": [
           {
             "name": "id",

