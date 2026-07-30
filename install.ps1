@@ -129,9 +129,9 @@ if __name__ == "__main__":
 
 Set-Content -Path "$AgentDir\run_win_agent.py" -Value $AgentCode -Encoding UTF8
 
-Stop-Process -Name "python" -ErrorAction SilentlyContinue | Out-Null
-
 $ScriptPath = "$AgentDir\run_win_agent.py"
+Get-WmiObject Win32_Process -Filter "name='python.exe' and CommandLine like '%run_win_agent.py%'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
 $LogPath = "$AgentDir\agent.log"
 Start-Process -FilePath $PyPath -ArgumentList "$ScriptPath" -RedirectStandardOutput $LogPath -WindowStyle Hidden
 

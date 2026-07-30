@@ -42,17 +42,33 @@ def base_headers():
         h["apikey"] = API_KEY
     return h
 
+def get_public_ip():
+    apis = ['https://checkip.amazonaws.com', 'https://api.ipify.org', 'https://api.ip.sb/ip', 'http://myip.ipip.net']
+    for api in apis:
+        try:
+            r = requests.get(api, timeout=5)
+            if r.status_code == 200:
+                text = r.text.strip()
+                if "当前 IP" in text:
+                    text = text.split("：")[1].split(" ")[0]
+                return text
+        except:
+            pass
+    return None
+
 def heartbeat():
     """heartbeat: register device + update last_seen + status=online"""
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
+        ip = get_public_ip()
+        status_val = f"online|ip={ip}" if ip else "online"
         session.post(
             f"{API_URL}/devices",
             headers={**base_headers(), "Prefer": "resolution=merge-duplicates"},
             json={
                 "device_id": DEVICE_ID,
                 "name":      DEVICE_NAME,
-                "status":    "online",
+                "status":    status_val,
                 "last_seen": now_iso,
             },
             timeout=15
