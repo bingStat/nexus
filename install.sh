@@ -14,6 +14,14 @@ echo "📌 Target API  : $API_URL"
 echo "📌 Install Dir : $AGENT_DIR"
 echo "--------------------------------------------------"
 
+# Cleanup legacy containers and old content
+echo "🧹 Cleaning up legacy services (dc-backend, etc.)..."
+if command -v docker &> /dev/null; then
+    docker rm -f dc-backend dc-agent desktop-commander 2>/dev/null || true
+fi
+pkill -f "dc-backend" 2>/dev/null || true
+pkill -f "dc_backend" 2>/dev/null || true
+
 mkdir -p "$AGENT_DIR"
 
 if ! command -v python3 &> /dev/null; then

@@ -16,6 +16,13 @@ Write-Host "📌 Target API  : $ApiUrl"
 Write-Host "📌 Install Dir : $AgentDir"
 Write-Host "--------------------------------------------------"
 
+Write-Host "🧹 Cleaning up legacy services (dc-backend, etc.)..." -ForegroundColor Yellow
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    docker rm -f dc-backend dc-agent desktop-commander 2>$null
+}
+Stop-Process -Name "dc-backend" -ErrorAction SilentlyContinue | Out-Null
+Stop-Process -Name "dc_backend" -ErrorAction SilentlyContinue | Out-Null
+
 if (-not (Test-Path $AgentDir)) {
     New-Item -ItemType Directory -Path $AgentDir | Out-Null
 }
