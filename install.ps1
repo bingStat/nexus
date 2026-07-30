@@ -1,4 +1,4 @@
-# Nexus Agent One-Liner Installer for Windows (PowerShell)
+﻿# Nexus Agent One-Liner Installer for Windows (PowerShell)
 param(
     [string]$NodeName = $env:COMPUTERNAME,
     [string]$ApiKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5cXpnbXpseWt1ZnNidG15a3B3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNDk0OTEsImV4cCI6MjEwMDgyNTQ5MX0.OAtknQj1k5ggmHmMrlQHpQqtu9T_tl_VEpiW3DgPCng",
@@ -9,14 +9,14 @@ $ErrorActionPreference = "Stop"
 $AgentDir = "$env:USERPROFILE\.nexus-agent"
 
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " 🚀 Nexus Multi-Device Agent Installer (Windows)" -ForegroundColor Cyan
+Write-Host " ðŸš€ Nexus Multi-Device Agent Installer (Windows)" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "📌 Node Name   : $NodeName"
-Write-Host "📌 Target API  : $ApiUrl"
-Write-Host "📌 Install Dir : $AgentDir"
+Write-Host "ðŸ“Œ Node Name   : $NodeName"
+Write-Host "ðŸ“Œ Target API  : $ApiUrl"
+Write-Host "ðŸ“Œ Install Dir : $AgentDir"
 Write-Host "--------------------------------------------------"
 
-Write-Host "🧹 Cleaning up legacy services (dc-backend, etc.)..." -ForegroundColor Yellow
+Write-Host "ðŸ§¹ Cleaning up legacy services (dc-backend, etc.)..." -ForegroundColor Yellow
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     docker rm -f dc-backend dc-agent desktop-commander 2>$null
 }
@@ -75,9 +75,9 @@ def heartbeat():
             },
             timeout=5
         )
-        log(f"♥ Heartbeat OK ({DEVICE_ID})")
+        log(f"â™¥ Heartbeat OK ({DEVICE_ID})")
     except Exception as e:
-        log(f"♥ Heartbeat FAIL: {e}")
+        log(f"â™¥ Heartbeat FAIL: {e}")
 
 def fetch_and_execute():
     try:
@@ -90,7 +90,7 @@ def fetch_and_execute():
                 if not cmd_id or not command_str:
                     continue
                 
-                log(f"⚡ [{cmd_id[:8]}]: {command_str[:60]}")
+                log(f"âš¡ [{cmd_id[:8]}]: {command_str[:60]}")
                 requests.patch(f"{API_URL}/commands?id=eq.{cmd_id}&status=eq.pending", headers={**base_headers(), "Prefer": "return=representation"}, json={"status": "running"}, timeout=5)
 
                 try:
@@ -136,6 +136,7 @@ $LogPath = "$AgentDir\agent.log"
 Start-Process -FilePath $PyPath -ArgumentList "$ScriptPath" -RedirectStandardOutput $LogPath -RedirectStandardError $LogPath -WindowStyle Hidden
 
 Write-Host "==================================================" -ForegroundColor Green
-Write-Host " 🎉 Nexus Agent successfully deployed & running for [$NodeName]!" -ForegroundColor Green
-Write-Host " 📄 Log file: $LogPath" -ForegroundColor Green
+Write-Host " ðŸŽ‰ Nexus Agent successfully deployed & running for [$NodeName]!" -ForegroundColor Green
+Write-Host " ðŸ“„ Log file: $LogPath" -ForegroundColor Green
 Write-Host "==================================================" -ForegroundColor Green
+
