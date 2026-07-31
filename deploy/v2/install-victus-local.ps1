@@ -29,9 +29,11 @@ if (!$DeviceToken) {
     $DeviceToken = 'pending-device-enrollment'
 }
 
-$Python = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
-if (!$Python -and (Test-Path 'C:\Users\Bing\miniconda3\python.exe')) {
+$Python = $null
+if (Test-Path 'C:\Users\Bing\miniconda3\python.exe') {
     $Python = 'C:\Users\Bing\miniconda3\python.exe'
+} else {
+    $Python = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
 }
 if (!$Python) { throw 'Python was not found' }
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
