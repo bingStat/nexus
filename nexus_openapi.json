@@ -1,0 +1,148 @@
+﻿{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nexus API",
+    "description": "Nexus è·¨ç«¯åˆ†å¸ƒå¼é›†ç¾¤æŽ§åˆ¶ APIï¼šæ”¯æŒè°ƒæŽ§ thinkcenter, oracle, vsc, n1, victus ç­‰é›†ç¾¤èŠ‚ç‚¹",
+    "version": "v4.1.0"
+  },
+  "servers": [
+    {
+      "url": "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1",
+      "description": "Nexus Cluster REST API"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/devices": {
+      "get": {
+        "summary": "èŽ·å–é›†ç¾¤è®¾å¤‡çŠ¶æ€",
+        "description": "èŽ·å–å½“å‰æ‰€æœ‰å·²è¿žæŽ¥å¹¶åœ¨çº¿çš„æœºå™¨åˆ—è¡¨åŠæœ€åŽå¿ƒè·³æ—¶é—´ (last_seen)",
+        "operationId": "list_devices",
+        "parameters": [
+          {
+            "name": "select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "device_id,name,status,last_seen"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "æˆåŠŸè¿”å›žåœ¨çº¿è®¾å¤‡åˆ—è¡¨"
+          }
+        }
+      }
+    },
+    "/commands": {
+      "post": {
+        "summary": "ä¸‹å‘ Shell / PowerShell å‘½ä»¤",
+        "description": "å‘æŒ‡å®šç›®æ ‡è®¾å¤‡ä¸‹å‘ Shell æˆ– PowerShell æŒ‡ä»¤ï¼Œè‡ªåŠ¨å…¥é˜Ÿå¹¶è§¦å‘å¼‚æ­¥è®¤é¢†",
+        "operationId": "execute_command",
+        "parameters": [
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "return=representation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "å¿…é¡»è‡ªå·±ç”Ÿæˆä¸€ä¸ªéšæœº UUID v4 ä½œä¸ºä¸»é”®"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "å…·ä½“çš„ Shell æˆ– PowerShell å‘½ä»¤å­—ç¬¦ä¸²"
+                  },
+                  "target_device": {
+                    "type": "string",
+                    "description": "ç›®æ ‡è®¾å¤‡æ ‡è¯†ï¼ˆthinkcenter, oracle, vsc, n1, victusï¼‰"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "å›ºå®šä¼ å…¥ 'pending'",
+                    "default": "pending"
+                  },
+                  "timeout_ms": {
+                    "type": "integer",
+                    "description": "è‡ªå®šä¹‰å‘½ä»¤è¶…æ—¶é™åˆ¶æ¯«ç§’æ•°ï¼ˆé»˜è®¤ 30000msï¼‰",
+                    "default": 30000
+                  }
+                },
+                "required": [
+                  "id",
+                  "command",
+                  "target_device",
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "å‘½ä»¤æˆåŠŸå…¥é˜Ÿå¹¶è¿”å›ž ID"
+          }
+        }
+      },
+      "get": {
+        "summary": "æŸ¥è¯¢æŒ‡ä»¤æ‰§è¡Œç»“æžœ",
+        "description": "è½®è¯¢å‘½ä»¤çš„æ‰§è¡ŒçŠ¶æ€ï¼ˆpending -> running -> completed/failedï¼‰åŠè¾“å‡ºç»“æžœ (output)",
+        "operationId": "get_command_results",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "description": "å¿…é¡»ä»¥ 'eq.' å¼€å¤´æŽ¥ä¸Šåˆšæ‰ä¸‹å‘çš„ UUIDï¼Œå¦‚ 'eq.123e4567-e89b-12d3-a456-426614174000'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "status,output"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "æˆåŠŸè¿”å›žå‘½ä»¤çŠ¶æ€å’Œè¾“å‡ºç»“æžœ"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "apikey"
+      }
+    }
+  }
+}
+

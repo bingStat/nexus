@@ -1,0 +1,11 @@
+﻿__pycache__/
+*.py[cod]
+*.log
+.env
+.env.*
+.wrangler/
+audit.json
+zone_audit.json
+*.pem
+*.key
+
