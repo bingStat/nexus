@@ -38,16 +38,37 @@ import subprocess
 import requests
 import socket
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+def acquire_single_instance_lock():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(('127.0.0.1', 49159))
+        return sock
+    except Exception:
+        print("[Nexus Agent] Another instance is running. Exiting.", flush=True)
+        sys.exit(0)
+
+_instance_lock = acquire_single_instance_lock()
+
 API_URL = os.getenv("NEXUS_API_URL", "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1")
 API_KEY = os.getenv("NEXUS_API_KEY", "")
-DEVICE_ID = os.getenv("DEVICE_ID", socket.gethostname())
-DEVICE_NAME = os.getenv("DEVICE_NAME", DEVICE_ID)
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", "10"))
-POLL_SEC = float(os.getenv("POLL_SEC", "2"))
-HB_SEC = float(os.getenv("HB_SEC", "15"))
+NODE_NAME_LOWER = "$NODE_NAME".lower()
+NODE_ALIASES = list(set([
+    "$NODE_NAME".lower(),
+    "$NODE_NAME",
+    socket.gethostname().lower(),
+    "all",
+    "broadcast"
+]))
+if "thinkcenter" in NODE_NAME_LOWER or "tc" in NODE_NAME_LOWER:
+    NODE_ALIASES.extend(["thinkcenter", "tcr", "tc"])
+elif "oracle" in NODE_NAME_LOWER:
+    NODE_ALIASES.extend(["oracle", "oracle-amd"])
+elif "istoreos" in NODE_NAME_LOWER or "n1" in NODE_NAME_LOWER:
+    NODE_ALIASES.extend(["istoreos", "n1", "n1-istoreos"])
 
 def log(msg):
     ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -129,12 +150,8 @@ while True:
         last_hb = now
 
     try:
-        q = (
-            f"status=eq.pending"
-            f"&or=(target_device.ilike.{DEVICE_ID},"
-            f"target_device.ilike.{DEVICE_NAME})"
-            f"&order=created_at.asc&limit=5"
-        )
+        or_terms = ",".join([f"target_device.ilike.{alias}" for alias in NODE_ALIASES if alias])
+        q = f"status=eq.pending&or=({or_terms})&order=created_at.asc&limit=5"
         resp = requests.get(f"{API_URL}/commands?{q}", headers=base_headers(), timeout=10)
 
         if resp.ok:
