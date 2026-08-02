@@ -1,0 +1,7 @@
+[Unit]
+Description=Nexus transition alert engine
+After=nexus-health-snapshot.service nexus-mcp.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nexus-alert-engine
