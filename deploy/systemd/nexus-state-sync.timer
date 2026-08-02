@@ -1,0 +1,11 @@
+[Unit]
+Description=Synchronize Nexus local state every minute
+
+[Timer]
+OnBootSec=75s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
