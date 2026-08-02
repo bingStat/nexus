@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 OUTPUT = Path(os.getenv("NEXUS_HEALTH_OUTPUT", "/var/lib/nexus/health.json"))
+DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 HTTP_CHECKS = [
     ("nexus-api", "Nexus API", "http://127.0.0.1:8000/health"),
@@ -21,6 +22,7 @@ HTTP_CHECKS = [
     ("v152", "V152", "http://192.168.1.1/"),
     ("ax3600", "AX3600", "http://192.168.1.2/"),
     ("n1", "N1", "http://192.168.1.88/"),
+    ("oracle-control", "Oracle / VSC tunnels", "http://100.116.89.65:19083/health"),
 ]
 
 TCP_CHECKS = [
@@ -36,9 +38,36 @@ def now_iso() -> str:
 
 def http_check(check_id: str, name: str, url: str) -> dict:
     started = time.monotonic()
+    if url.startswith("http://100.116.89.65:19083"):
+        try:
+            run = subprocess.run(
+                f"curl --noproxy '*' -sS -o /dev/null -w '%{{http_code}}' --max-time 8 {url}",
+                shell=True,
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=True,
+            )
+            code = int(run.stdout.strip())
+            status = "online" if code < 500 else "degraded"
+            error = None if code < 500 else f"HTTP {code}"
+        except Exception as exc:
+            code, status, error = None, "offline", type(exc).__name__
+        return {
+            "id": check_id,
+            "name": name,
+            "kind": "http",
+            "target": url,
+            "status": status,
+            "http_code": code,
+            "latency_ms": round((time.monotonic() - started) * 1000),
+            "error": error,
+            "checked_at": now_iso(),
+        }
     request = urllib.request.Request(url, headers={"User-Agent": "NexusHealth/1.0"})
     try:
-        with urllib.request.urlopen(request, timeout=8) as response:
+        opener = DIRECT_OPENER if url.startswith(("http://100.", "http://192.168.", "http://127.")) else urllib.request.build_opener()
+        with opener.open(request, timeout=8) as response:
             code = int(response.status)
         status = "online" if code < 500 else "degraded"
         error = None
@@ -104,10 +133,54 @@ def tailscale_self() -> dict:
         return {"status": "offline", "error": type(exc).__name__}
 
 
+def tailscale_peer_check(check_id: str, name: str, match: str) -> dict:
+    started = time.monotonic()
+    try:
+        run = subprocess.run(
+            ["tailscale", "status", "--json"],
+            text=True,
+            capture_output=True,
+            timeout=8,
+            check=True,
+        )
+        payload = json.loads(run.stdout)
+        peers = list((payload.get("Peer") or {}).values())
+        peer = next(
+            (
+                item
+                for item in peers
+                if match.lower()
+                in str(item.get("HostName") or item.get("DNSName") or "").lower()
+            ),
+            None,
+        )
+        status = "online" if peer and peer.get("Online") else "offline"
+        error = None if peer else "not-enrolled"
+        target = str((peer or {}).get("DNSName") or match)
+    except Exception as exc:
+        status, error, target = "offline", type(exc).__name__, match
+    return {
+        "id": check_id,
+        "name": name,
+        "kind": "tailscale-peer",
+        "target": target,
+        "status": status,
+        "latency_ms": round((time.monotonic() - started) * 1000),
+        "error": error,
+        "checked_at": now_iso(),
+    }
+
+
 def main() -> None:
     checks = [http_check(*item) for item in HTTP_CHECKS]
     checks.extend(tcp_check(*item) for item in TCP_CHECKS)
-    payload = {"generated_at": now_iso(), "node": socket.gethostname(), "tailscale": tailscale_self(), "checks": checks}
+    checks.append(tailscale_peer_check("elitebook", "EliteBook enrollment", "elitebook"))
+    payload = {
+        "generated_at": now_iso(),
+        "node": socket.gethostname(),
+        "tailscale": tailscale_self(),
+        "checks": checks,
+    }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", dir=OUTPUT.parent, delete=False, encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
