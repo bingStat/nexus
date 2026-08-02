@@ -1,0 +1,17 @@
+[Unit]
+Description=Nexus Oracle read-only standby dashboard
+After=network-online.target tailscaled.service nexus-oracle-api-relay.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/nexus-oracle-standby.env
+ExecStart=/usr/local/sbin/nexus-oracle-standby
+Restart=always
+RestartSec=5
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
