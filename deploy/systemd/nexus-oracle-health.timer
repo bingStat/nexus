@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Oracle Nexus health snapshot every minute
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
