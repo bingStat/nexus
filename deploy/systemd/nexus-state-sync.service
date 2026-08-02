@@ -1,0 +1,10 @@
+[Unit]
+Description=Nexus local state model synchronization
+After=nexus-mcp.service nexus-health-snapshot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nexus-state-sync
+User=root
+PrivateTmp=true
+NoNewPrivileges=true
