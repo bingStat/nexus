@@ -41,11 +41,11 @@ def http_check(check_id: str, name: str, url: str) -> dict:
     if url.startswith("http://100.116.89.65:19083"):
         try:
             run = subprocess.run(
-                f"curl --noproxy '*' -sS -o /dev/null -w '%{{http_code}}' --max-time 8 {url}",
+                f"curl --noproxy '*' -sS -o /dev/null -w '%{{http_code}}' --connect-timeout 5 --max-time 20 {url}",
                 shell=True,
                 text=True,
                 capture_output=True,
-                timeout=10,
+                timeout=24,
                 check=True,
             )
             code = int(run.stdout.strip())
