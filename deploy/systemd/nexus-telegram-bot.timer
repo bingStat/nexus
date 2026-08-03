@@ -1,10 +1,10 @@
 [Unit]
-Description=Poll Nexus Telegram bot every two minutes
+Description=Poll Nexus Telegram bot every five minutes
 
 [Timer]
-OnBootSec=45s
-OnUnitActiveSec=120s
-AccuracySec=15s
+OnBootSec=3min 30s
+OnUnitActiveSec=5min
+AccuracySec=30s
 Persistent=true
 
 [Install]
