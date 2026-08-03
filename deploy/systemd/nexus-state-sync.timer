@@ -1,10 +1,10 @@
 [Unit]
-Description=Synchronize Nexus local state every minute
+Description=Synchronize Nexus local state every five minutes
 
 [Timer]
-OnBootSec=75s
-OnUnitActiveSec=60s
-AccuracySec=10s
+OnBootSec=4min
+OnUnitActiveSec=5min
+AccuracySec=30s
 Persistent=true
 
 [Install]
