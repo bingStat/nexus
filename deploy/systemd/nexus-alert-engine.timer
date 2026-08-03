@@ -1,10 +1,10 @@
 [Unit]
-Description=Run Nexus alert engine every minute
+Description=Run Nexus alert engine every three minutes
 
 [Timer]
-OnBootSec=90s
-OnUnitActiveSec=60s
-AccuracySec=10s
+OnBootSec=2min 45s
+OnUnitActiveSec=3min
+AccuracySec=20s
 Persistent=true
 
 [Install]
