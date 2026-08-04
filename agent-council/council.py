@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import web_board
+import web_council
+
 SESSION = "nexus-council"
 ROLES = ("architect", "reviewer", "implementer", "verifier")
 
@@ -77,8 +80,13 @@ def validate_repo(repo: Path) -> Path:
 
 
 def worktree_path(repo: Path, task_id: str, role: str) -> Path:
-    root = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
-    return root / "Nexus" / "agent-council" / "worktrees" / repo.name / task_id / role
+    configured = os.environ.get("NEXUS_COUNCIL_WORKTREE_ROOT", "").strip()
+    if configured:
+        root = Path(configured)
+    else:
+        local = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
+        root = local / "Nexus" / "agent-council" / "worktrees"
+    return root / repo.name / task_id / role
 
 
 def room_path(repo: Path, task_id: str) -> Path:
@@ -106,17 +114,14 @@ def ensure_worktree(repo: Path, task_id: str, role: str, *, writable: bool) -> P
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    web_council.atomic_write_json(path, data)
 
 
 def write_message(room: Path, seq: int, sender: str, kind: str, body: str, reply_to: int | None = None) -> Path:
     path = room / "messages" / f"{seq:03d}-{sender}-{kind}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     front = ["---", f"id: {seq:03d}", f"from: {sender}", "to: orchestrator", f"type: {kind}", f"reply_to: {reply_to if reply_to is not None else 'null'}", "status: final", f"created_at: {now_iso()}", "---", ""]
-    path.write_text("\n".join(front) + body.strip() + "\n", encoding="utf-8")
+    web_council.atomic_write_text(path, "\n".join(front) + body.strip() + "\n")
     return path
 
 
@@ -145,7 +150,7 @@ def prompt_runtime(runtime: "RoleRuntime", prompt: str, timeout_seconds: int, ro
     logs.mkdir(parents=True, exist_ok=True)
     prompt_path = logs / f"{label}-prompt.txt"
     output_path = logs / f"{label}-output.md"
-    prompt_path.write_text(prompt, encoding="utf-8")
+    web_council.atomic_write_text(prompt_path, prompt)
     token = f"{int(time.time() * 1000)}-{runtime.role}"
     finish_marker = f"__COUNCIL_FINISHED_{token}__"
     status_path = logs / f"{label}-exit.txt"
@@ -185,7 +190,7 @@ def prompt_runtime(runtime: "RoleRuntime", prompt: str, timeout_seconds: int, ro
                 f"printf '%s\n' {shlex.quote(finish_marker)}\n"
                 "exit 0\n"
             )
-            runner_path.write_text(runner, encoding="utf-8", newline="\n")
+            web_council.atomic_write_text(runner_path, runner)
             command = f"wsl.exe --exec /bin/sh {ps_quote(wsl_runner)}"
         else:
             command = (
@@ -231,7 +236,7 @@ def initialize(repo: Path, task_id: str, task_text: str, discussion_only: bool) 
     room = room_path(repo, task_id)
     for sub in ("messages", "decisions", "logs"):
         (room / sub).mkdir(parents=True, exist_ok=True)
-    (room / "task.md").write_text(f"# Task\n\n{task_text.strip()}\n\n## Council protocol\n\nIndependent proposal -> cross-review -> verifier decision -> implementation -> review -> deterministic verification.\n", encoding="utf-8")
+    web_council.atomic_write_text(room / "task.md", f"# Task\n\n{task_text.strip()}\n\n## Council protocol\n\nIndependent proposal -> cross-review -> verifier decision -> implementation -> review -> deterministic verification.\n")
     runtimes: dict[str, RoleRuntime] = {}
     kinds = {"architect": "agy", "reviewer": "agy", "implementer": "codex", "verifier": "codex"}
     active_roles = ("architect", "reviewer", "verifier") if discussion_only else ROLES
@@ -314,7 +319,7 @@ def council_run(repo: Path, task_id: str, task_text: str, timeout_seconds: int, 
     )
     decision = prompt_runtime(roles["verifier"], decision_prompt, timeout_seconds, room, "05-verifier-decision")
     decision_path = room / "decisions" / "final-decision.md"
-    decision_path.write_text(decision.strip() + "\n", encoding="utf-8")
+    web_council.atomic_write_text(decision_path, decision.strip() + "\n")
     state_path = room / "state.json"
     state = json.loads(state_path.read_text(encoding="utf-8")); state.update({"status": "decision-complete", "decision": str(decision_path), "updated_at": now_iso()}); write_json(state_path, state)
     if discussion_only:
@@ -331,8 +336,8 @@ def council_run(repo: Path, task_id: str, task_text: str, timeout_seconds: int, 
     implementation = prompt_runtime(roles["implementer"], implementation_prompt, timeout_seconds * 2, room, "06-implementer")
     p5 = write_message(room, 5, "implementer", "implementation-report", implementation)
     git(implementer_path, "add", "-A")
-    diff_path = room / "logs" / "implementer.diff"; diff_path.write_text(git(implementer_path, "diff", "--cached", "--binary").stdout, encoding="utf-8")
-    status_path = room / "logs" / "implementer-status.txt"; status_path.write_text(git(implementer_path, "status", "--short").stdout, encoding="utf-8")
+    diff_path = room / "logs" / "implementer.diff"; web_council.atomic_write_text(diff_path, git(implementer_path, "diff", "--cached", "--binary").stdout)
+    status_path = room / "logs" / "implementer-status.txt"; web_council.atomic_write_text(status_path, git(implementer_path, "status", "--short").stdout)
     acceptance_path, machine_passed = run_acceptance(implementer_path, room, acceptance_commands, timeout_seconds)
     review_evidence = evidence_bundle(task_file, decision_path, p5, diff_path, status_path, acceptance_path)
     review = prompt_runtime(
@@ -380,18 +385,126 @@ def status(repo: Path, task_id: str) -> int:
     print(state.read_text(encoding="utf-8")); return 0
 
 
+def web_start(repo: Path, task_id: str, task_text: str, mode: str) -> int:
+    council = web_council.WebCouncil(repo, task_id, task_text, mode, room_path(repo, task_id))
+    state = council.start()
+    print(json.dumps({"status": state["phase"], "room": str(council.room), "prompts": str(council.room / "web" / "prompts" / "1")}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def web_submit(repo: Path, task_id: str, provider: str, round_id: int, response_file: str | None, overwrite: bool) -> int:
+    text = Path(response_file).read_text(encoding="utf-8-sig", errors="replace") if response_file else sys.stdin.read()
+    council = web_council.WebCouncil.open(room_path(repo, task_id))
+    result = council.submit(provider, round_id, text, overwrite=overwrite)
+    print(json.dumps({"status": "ok", **result}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def web_advance(repo: Path, task_id: str) -> int:
+    council = web_council.WebCouncil.open(room_path(repo, task_id))
+    state = council.advance()
+    print(json.dumps({"status": state["phase"], "room": str(council.room), "prompts": str(council.room / "web" / "prompts" / "2")}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def web_status(repo: Path, task_id: str) -> int:
+    council = web_council.WebCouncil.open(room_path(repo, task_id))
+    status_data = council.status()
+    print(json.dumps(status_data["json"], ensure_ascii=False, indent=2))
+    print(status_data["digest"], file=sys.stderr)
+    return 0
+
+
+def web_finalize(repo: Path, task_id: str, timeout_seconds: int, acceptance_commands: list[str]) -> int:
+    ensure_server()
+    council = web_council.WebCouncil.open(room_path(repo, task_id))
+    prompt = council.finalization_prompt()
+    verifier_path = ensure_worktree(repo, task_id, "verifier", writable=False)
+    workspace_id, pane_id = create_workspace(verifier_path, f"web-council-{task_id}-verifier")
+    verifier = RoleRuntime("verifier", "codex", str(verifier_path), workspace_id, pane_id, agent_name("verifier", task_id))
+    decision = prompt_runtime(verifier, prompt, timeout_seconds, council.room, "web-05-verifier-decision")
+    state = council.finalize_discussion(decision)
+    if state["mode"] == "web-hybrid":
+        herdr("workspace", "close", verifier.workspace_id, timeout=30, check=False)
+        return web_hybrid_implement(repo, task_id, timeout_seconds, acceptance_commands)
+    cleanup_success(repo, council.room, {"verifier": verifier}, keep_implementer=False)
+    print(json.dumps({"status": state["phase"], "room": str(council.room), "decision": state.get("decision")}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def web_hybrid_implement(repo: Path, task_id: str, timeout_seconds: int, acceptance_commands: list[str]) -> int:
+    council = web_council.WebCouncil.open(room_path(repo, task_id))
+    state_path = council.room / "web" / "state.json"
+    council.transition("implementing", event="web-hybrid-implementing")
+    runtimes: dict[str, RoleRuntime] = {}
+    for role, writable in (("implementer", True), ("reviewer", False), ("verifier", False)):
+        wt = ensure_worktree(repo, task_id, role, writable=writable)
+        workspace_id, pane_id = create_workspace(wt, f"web-council-{task_id}-{role}")
+        runtimes[role] = RoleRuntime(role, "codex", str(wt), workspace_id, pane_id, agent_name(role, task_id))
+    task_file = council.room / "task.md"
+    decision_path = council.room / "decisions" / "final-decision.md"
+    implementer_path = Path(runtimes["implementer"].path)
+    implementation = prompt_runtime(
+        runtimes["implementer"],
+        f"You are the IMPLEMENTER. Work only inside {implementer_path}. Implement the Web Council final decision. Do not commit, merge, push, or deploy.\n\n" + evidence_bundle(task_file, decision_path),
+        timeout_seconds * 2,
+        council.room,
+        "web-06-implementer",
+    )
+    p5 = write_message(council.room, 100, "implementer", "implementation-report", implementation)
+    git(implementer_path, "add", "-A")
+    diff_path = council.room / "logs" / "implementer.diff"; web_council.atomic_write_text(diff_path, git(implementer_path, "diff", "--cached", "--binary").stdout)
+    status_path = council.room / "logs" / "implementer-status.txt"; web_council.atomic_write_text(status_path, git(implementer_path, "status", "--short").stdout)
+    acceptance_path, machine_passed = run_acceptance(implementer_path, council.room, acceptance_commands, timeout_seconds)
+    review = prompt_runtime(runtimes["reviewer"], "Review the complete web-hybrid implementation evidence.\n\n" + evidence_bundle(task_file, decision_path, p5, diff_path, status_path, acceptance_path), timeout_seconds, council.room, "web-07-reviewer-diff-review")
+    p6 = write_message(council.room, 101, "reviewer", "diff-review", review, 100)
+    verification = prompt_runtime(runtimes["verifier"], "Return ACCEPT, REVISE, or REJECT after verifying this evidence.\n\n" + evidence_bundle(task_file, decision_path, diff_path, status_path, acceptance_path, p6), timeout_seconds, council.room, "web-08-verifier-final")
+    p7 = write_message(council.room, 102, "verifier", "verification", verification, 101)
+    verdict = verification.strip().splitlines()[0].strip().upper() if verification.strip() else "REJECT"
+    accepted = machine_passed and verdict.startswith("ACCEPT")
+    final_phase = "accepted" if accepted else ("revision-required" if verdict.startswith("REVISE") else "rejected")
+    council.transition(
+        final_phase,
+        event="web-hybrid-complete",
+        updates={
+            "verdict": verdict,
+            "machine_acceptance_passed": machine_passed,
+            "artifacts": [str(p) for p in (p5, p6, p7, decision_path, diff_path, status_path, acceptance_path)],
+        },
+    )
+    cleanup_success(repo, council.room, runtimes, keep_implementer=True)
+    if not accepted:
+        raise CouncilError(f"Web hybrid implementation was not accepted: verdict={verdict}, machine_acceptance_passed={machine_passed}, room={council.room}")
+    print(json.dumps({"status": final_phase, "room": str(council.room)}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nexus + Herdr Agent Council orchestrator")
     sub = parser.add_subparsers(dest="command", required=True); sub.add_parser("doctor")
     rp = sub.add_parser("run"); rp.add_argument("--repo", required=True); rp.add_argument("--task-id", required=True); rp.add_argument("--task", required=True); rp.add_argument("--timeout", type=int, default=600); rp.add_argument("--discussion-only", action="store_true"); rp.add_argument("--accept-command", action="append", default=[])
     sp = sub.add_parser("status"); sp.add_argument("--repo", required=True); sp.add_argument("--task-id", required=True)
+    wsp = sub.add_parser("web-start"); wsp.add_argument("--repo", required=True); wsp.add_argument("--task-id", required=True); wsp.add_argument("--task", required=True); wsp.add_argument("--mode", choices=web_council.MODES, default="web-discussion")
+    wsub = sub.add_parser("web-submit"); wsub.add_argument("--repo", required=True); wsub.add_argument("--task-id", required=True); wsub.add_argument("--provider", required=True, choices=web_council.PROVIDERS); wsub.add_argument("--round", required=True, type=int); wsub.add_argument("--response-file"); wsub.add_argument("--overwrite", action="store_true")
+    wap = sub.add_parser("web-advance"); wap.add_argument("--repo", required=True); wap.add_argument("--task-id", required=True)
+    wfp = sub.add_parser("web-finalize"); wfp.add_argument("--repo", required=True); wfp.add_argument("--task-id", required=True); wfp.add_argument("--timeout", type=int, default=600); wfp.add_argument("--accept-command", action="append", default=[])
+    wsp2 = sub.add_parser("web-status"); wsp2.add_argument("--repo", required=True); wsp2.add_argument("--task-id", required=True)
+    wbp = sub.add_parser("web-serve"); wbp.add_argument("--repo", required=True); wbp.add_argument("--task-id", required=True); wbp.add_argument("--bind", default="127.0.0.1"); wbp.add_argument("--port", type=int, default=8765); wbp.add_argument("--token")
     args = parser.parse_args()
     try:
         if args.command == "doctor": ensure_server(); return doctor()
         repo = validate_repo(Path(args.repo)); task_id = slugify(args.task_id)
         if args.command == "status": return status(repo, task_id)
+        if args.command == "web-start": return web_start(repo, task_id, args.task, args.mode)
+        if args.command == "web-submit": return web_submit(repo, task_id, args.provider, args.round, args.response_file, args.overwrite)
+        if args.command == "web-advance": return web_advance(repo, task_id)
+        if args.command == "web-finalize": return web_finalize(repo, task_id, args.timeout, args.accept_command)
+        if args.command == "web-status": return web_status(repo, task_id)
+        if args.command == "web-serve":
+            web_board.serve(room_path(repo, task_id), args.bind, args.port, args.token)
+            return 0
         room = council_run(repo, task_id, args.task, args.timeout, args.discussion_only, args.accept_command); print(json.dumps({"status": "completed", "room": str(room)}, ensure_ascii=False)); return 0
-    except (CouncilError, subprocess.TimeoutExpired, KeyError, ValueError) as exc:
+    except (CouncilError, web_council.WebCouncilError, subprocess.TimeoutExpired, KeyError, ValueError) as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False), file=sys.stderr); return 1
 
 

@@ -1,0 +1,17 @@
+[plugin]
+id = "nexus-web-council"
+name = "Nexus Web Council"
+version = "0.1.0"
+description = "Local human-in-the-loop Web Council Board for ChatGPT, Claude, and Gemini."
+
+[[actions]]
+id = "open-board"
+label = "Open or start Web Council Board"
+command = "powershell.exe"
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "{{plugin_dir}}\\start-board.ps1"]
+
+[[panes]]
+id = "web-council-status"
+label = "Web Council Status"
+command = "powershell.exe"
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "{{plugin_dir}}\\status-pane.ps1"]

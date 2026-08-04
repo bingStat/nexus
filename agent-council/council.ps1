@@ -1,8 +1,16 @@
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('doctor','run','status')][string]$Command,
+    [Parameter(Mandatory=$true)][ValidateSet('doctor','run','status','web-start','web-submit','web-advance','web-finalize','web-status','web-serve')][string]$Command,
     [string]$Repo = 'C:\Users\Bing\aurora\Workstation\Nexus',
     [string]$TaskId,
     [string]$Task,
+    [ValidateSet('web-discussion','web-hybrid')][string]$Mode = 'web-discussion',
+    [ValidateSet('chatgpt','claude','gemini')][string]$Provider,
+    [int]$Round,
+    [string]$ResponseFile,
+    [switch]$Overwrite,
+    [string]$Bind = '127.0.0.1',
+    [int]$Port = 8765,
+    [string]$Token,
     [switch]$DiscussionOnly,
     [string[]]$AcceptCommand = @(),
     [int]$Timeout = 600
@@ -23,6 +31,27 @@ if ($Command -eq 'run') {
     foreach ($Acceptance in $AcceptCommand) {
         $ArgsList += @('--accept-command', $Acceptance)
     }
+}
+if ($Command -eq 'web-start') {
+    if (-not $Task) { throw '-Task is required.' }
+    $ArgsList += @('--task', $Task, '--mode', $Mode)
+}
+if ($Command -eq 'web-submit') {
+    if (-not $Provider) { throw '-Provider is required.' }
+    if ($Round -ne 1 -and $Round -ne 2) { throw '-Round must be 1 or 2.' }
+    $ArgsList += @('--provider', $Provider, '--round', "$Round")
+    if ($ResponseFile) { $ArgsList += @('--response-file', $ResponseFile) }
+    if ($Overwrite) { $ArgsList += '--overwrite' }
+}
+if ($Command -eq 'web-finalize') {
+    $ArgsList += @('--timeout', "$Timeout")
+    foreach ($Acceptance in $AcceptCommand) {
+        $ArgsList += @('--accept-command', $Acceptance)
+    }
+}
+if ($Command -eq 'web-serve') {
+    $ArgsList += @('--bind', $Bind, '--port', "$Port")
+    if ($Token) { $ArgsList += @('--token', $Token) }
 }
 & $Python @ArgsList
 exit $LASTEXITCODE
