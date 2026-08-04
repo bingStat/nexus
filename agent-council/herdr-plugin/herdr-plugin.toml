@@ -15,4 +15,4 @@ command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"
 id = "web-council-status"
 title = "Web Council Status"
 placement = "tab"
-command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "status-pane.ps1"]
+command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$root=$env:HERDR_PLUGIN_ROOT; if($root.StartsWith('\\\\?\\')){$root=$root.Substring(4)}; & (Join-Path $root 'status-pane.ps1')"]

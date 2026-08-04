@@ -238,6 +238,9 @@ class BoardSecurityTests(unittest.TestCase):
         self.assertNotIn("args", data["actions"][0])
         self.assertIsInstance(data["panes"][0]["command"], list)
         self.assertEqual("tab", data["panes"][0]["placement"])
+        pane_command = " ".join(data["panes"][0]["command"])
+        self.assertIn("HERDR_PLUGIN_ROOT", pane_command)
+        self.assertIn("status-pane.ps1", pane_command)
         for script in ("start-board.ps1", "status-pane.ps1"):
             content = (plugin_root / script).read_text(encoding="utf-8")
             self.assertNotIn("Mandatory=$true", content)
