@@ -225,5 +225,24 @@ class BoardSecurityTests(unittest.TestCase):
                 thread.join(timeout=5)
 
 
+    def test_herdr_plugin_manifest_schema(self) -> None:
+        import tomllib
+
+        plugin_root = ROOT / "herdr-plugin"
+        data = tomllib.loads((plugin_root / "herdr-plugin.toml").read_text(encoding="utf-8"))
+        self.assertEqual("nexus-web-council", data["id"])
+        self.assertEqual(["windows"], data["platforms"])
+        self.assertNotIn("plugin", data)
+        self.assertIsInstance(data["actions"][0]["command"], list)
+        self.assertIn("title", data["actions"][0])
+        self.assertNotIn("args", data["actions"][0])
+        self.assertIsInstance(data["panes"][0]["command"], list)
+        self.assertEqual("tab", data["panes"][0]["placement"])
+        for script in ("start-board.ps1", "status-pane.ps1"):
+            content = (plugin_root / script).read_text(encoding="utf-8")
+            self.assertNotIn("Mandatory=$true", content)
+            self.assertIn("Resolve-WebCouncilTask", content)
+
+
 if __name__ == "__main__":
     unittest.main()
