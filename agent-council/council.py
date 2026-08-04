@@ -277,6 +277,76 @@ def evidence_bundle(*paths: Path) -> str:
     return "\n\n".join(sections)
 
 
+
+def resolve_acceptance_commands(repo: Path, supplied: list[str], *, required: bool) -> tuple[list[str], str]:
+    explicit = [command.strip() for command in supplied if command and command.strip()]
+    if explicit:
+        return explicit, "explicit"
+
+    config_path = repo / "nexus.json"
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CouncilError(f"NEEDS_RECIPE: invalid {config_path}: {exc}") from exc
+        verification = config.get("verification")
+        if not isinstance(verification, list):
+            raise CouncilError(f"NEEDS_RECIPE: {config_path} must contain a verification array")
+        commands = [item.strip() for item in verification if isinstance(item, str) and item.strip()]
+        if len(commands) != len(verification) or not commands:
+            raise CouncilError(f"NEEDS_RECIPE: {config_path} verification must contain non-empty command strings")
+        return commands, "nexus.json"
+
+    detected: list[str] = []
+    pyproject = repo / "pyproject.toml"
+    pytest_configured = (repo / "pytest.ini").exists() or (repo / "conftest.py").exists() or (repo / "tests").is_dir()
+    if pyproject.exists():
+        try:
+            pytest_configured = pytest_configured or "[tool.pytest" in pyproject.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            pass
+    if pytest_configured:
+        detected.append("python -m pytest -q")
+
+    package_json = repo / "package.json"
+    if package_json.exists():
+        try:
+            package = json.loads(package_json.read_text(encoding="utf-8-sig"))
+            test_script = package.get("scripts", {}).get("test") if isinstance(package.get("scripts"), dict) else None
+            if isinstance(test_script, str) and test_script.strip() and "no test specified" not in test_script.lower():
+                detected.append("npm test")
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    if (repo / "Cargo.toml").exists():
+        detected.append("cargo test")
+
+    makefile = repo / "Makefile"
+    if makefile.exists():
+        try:
+            if re.search(r"(?m)^test\s*:", makefile.read_text(encoding="utf-8-sig", errors="replace")):
+                detected.append("make test")
+        except OSError:
+            pass
+
+    commands = list(dict.fromkeys(detected))
+    if commands:
+        return commands, "auto-detect"
+    if required:
+        raise CouncilError(
+            f"NEEDS_RECIPE: no explicit acceptance command, {config_path}, or safely detected test runner for {repo}"
+        )
+    return [], "not-required"
+
+
+def append_acceptance_plan(task_file: Path, commands: list[str], source: str) -> None:
+    if not commands:
+        return
+    text = task_file.read_text(encoding="utf-8-sig", errors="replace").rstrip()
+    lines = [text, "", "## Machine acceptance commands", "", f"Source: `{source}`", ""]
+    lines.extend(f"- `{command}`" for command in commands)
+    web_council.atomic_write_text(task_file, "\n".join(lines) + "\n")
+
 def run_acceptance(worktree: Path, room: Path, commands: list[str], timeout_seconds: int) -> tuple[Path, bool]:
     results: list[dict[str, Any]] = []
     diff_check = git(worktree, "diff", "--cached", "--check", timeout=120, check=False)
@@ -293,14 +363,11 @@ def run_acceptance(worktree: Path, room: Path, commands: list[str], timeout_seco
 
 
 def council_run(repo: Path, task_id: str, task_text: str, timeout_seconds: int, discussion_only: bool, acceptance_commands: list[str]) -> Path:
+    acceptance_commands, acceptance_source = resolve_acceptance_commands(repo, acceptance_commands, required=not discussion_only)
     ensure_server()
     room, roles = initialize(repo, task_id, task_text, discussion_only)
     task_file = room / "task.md"
-    if acceptance_commands:
-        with task_file.open("a", encoding="utf-8") as handle:
-            handle.write("\n## Machine acceptance commands\n\n")
-            for command in acceptance_commands:
-                handle.write(f"- `{command}`\n")
+    append_acceptance_plan(task_file, acceptance_commands, acceptance_source)
     a1 = prompt_runtime(roles["architect"], f"You are the ARCHITECT in an Agent Council. Work read-only. Read {task_file}. Produce an independent implementation proposal covering architecture, affected files, failure modes, rollback, and acceptance tests. Do not modify source files. End with a clear recommended plan.", timeout_seconds, room, "01-architect-proposal")
     p1 = write_message(room, 1, "architect", "proposal", a1)
     r1 = prompt_runtime(roles["reviewer"], f"You are the REVIEWER in an Agent Council. Work read-only and independently. Read {task_file}. Produce a competing proposal, challenging likely assumptions. Cover correctness, security, operational risk, maintainability, and simpler alternatives. Do not modify source files.", timeout_seconds, room, "02-reviewer-proposal")
@@ -416,8 +483,13 @@ def web_status(repo: Path, task_id: str) -> int:
 
 
 def web_finalize(repo: Path, task_id: str, timeout_seconds: int, acceptance_commands: list[str]) -> int:
-    ensure_server()
     council = web_council.WebCouncil.open(room_path(repo, task_id))
+    current = council.status()["json"]
+    acceptance_source = "not-required"
+    if current.get("mode") == "web-hybrid":
+        acceptance_commands, acceptance_source = resolve_acceptance_commands(repo, acceptance_commands, required=True)
+        append_acceptance_plan(council.room / "task.md", acceptance_commands, acceptance_source)
+    ensure_server()
     prompt = council.finalization_prompt()
     verifier_path = ensure_worktree(repo, task_id, "verifier", writable=False)
     workspace_id, pane_id = create_workspace(verifier_path, f"web-council-{task_id}-verifier")
