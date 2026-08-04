@@ -242,6 +242,9 @@ class BoardSecurityTests(unittest.TestCase):
             content = (plugin_root / script).read_text(encoding="utf-8")
             self.assertNotIn("Mandatory=$true", content)
             self.assertIn("Resolve-WebCouncilTask", content)
+        start_content = (plugin_root / "start-board.ps1").read_text(encoding="utf-8")
+        self.assertIn("Start-Process -FilePath 'powershell.exe'", start_content)
+        self.assertNotIn("-NoExit", start_content)
 
 
 if __name__ == "__main__":

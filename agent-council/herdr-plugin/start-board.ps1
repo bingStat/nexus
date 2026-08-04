@@ -22,4 +22,27 @@ function Resolve-WebCouncilTask {
 $resolved = Resolve-WebCouncilTask -Repo $Repo -TaskId $TaskId
 $Root = Split-Path -Parent $PSScriptRoot
 $Council = Join-Path $Root 'council.ps1'
-powershell.exe -NoProfile -NoExit -File $Council web-serve -Repo $resolved.Repo -TaskId $resolved.TaskId -Port $Port
+$uri = "http://127.0.0.1:$Port/"
+$running = $false
+try {
+    $probe = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 1
+    $running = $probe.StatusCode -eq 200
+} catch {}
+if (-not $running) {
+    $arguments = @(
+        '-NoProfile', '-NonInteractive', '-File', $Council,
+        'web-serve', '-Repo', $resolved.Repo, '-TaskId', $resolved.TaskId,
+        '-Bind', '127.0.0.1', '-Port', [string]$Port
+    )
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden | Out-Null
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        Start-Sleep -Milliseconds 250
+        try {
+            $probe = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 1
+            if ($probe.StatusCode -eq 200) { $running = $true; break }
+        } catch {}
+    }
+}
+if (-not $running) { throw "Council Board failed to start on $uri" }
+Start-Process $uri | Out-Null
+Write-Output "Council Board ready: $uri"
