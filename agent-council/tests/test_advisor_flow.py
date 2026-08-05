@@ -232,6 +232,16 @@ class AdvisorFlowTests(unittest.TestCase):
         self.assertEqual(self.root / "profiles" / "task-1" / "claude", profile_path)
 
 
+class AdvisorPowerShellWrapperTests(unittest.TestCase):
+    def test_wrapper_omits_empty_optional_advisor_arguments(self) -> None:
+        script = (ROOT / "council.ps1").read_text(encoding="utf-8")
+        self.assertIn("if ($Task) { $ArgsList += @('--task', $Task) }", script)
+        self.assertIn("if ($CurrentUserMessage)", script)
+        self.assertIn("if ($OrchestratorMessage)", script)
+        self.assertIn("if ($Synthesis)", script)
+        self.assertNotIn("'--synthesis', $Synthesis, '--providers'", script)
+
+
 class AgentBrowserTests(unittest.TestCase):
     def test_native_browser_command_resolution(self) -> None:
         command = agent_browser.resolve_browser_command()

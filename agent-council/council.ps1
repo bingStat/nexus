@@ -61,7 +61,11 @@ if ($Command -eq 'web-serve') {
 }
 if ($Command -eq 'advisor-turn') {
     if (-not $IdempotencyKey) { throw '-IdempotencyKey is required.' }
-    $ArgsList += @('--task', $Task, '--current-user-message', $CurrentUserMessage, '--orchestrator-message', $OrchestratorMessage, '--synthesis', $Synthesis, '--providers', $Providers, '--idempotency-key', $IdempotencyKey, '--byte-limit', "$ByteLimit", '--timeout', "$Timeout")
+    if ($Task) { $ArgsList += @('--task', $Task) }
+    if ($CurrentUserMessage) { $ArgsList += @('--current-user-message', $CurrentUserMessage) }
+    if ($OrchestratorMessage) { $ArgsList += @('--orchestrator-message', $OrchestratorMessage) }
+    if ($Synthesis) { $ArgsList += @('--synthesis', $Synthesis) }
+    $ArgsList += @('--providers', $Providers, '--idempotency-key', $IdempotencyKey, '--byte-limit', "$ByteLimit", '--timeout', "$Timeout")
 }
 & $Python @ArgsList
 exit $LASTEXITCODE
