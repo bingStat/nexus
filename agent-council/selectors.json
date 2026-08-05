@@ -1,0 +1,49 @@
+{
+  "claude": {
+    "composer": [
+      "div[contenteditable='true']",
+      "textarea"
+    ],
+    "send": [
+      "button[aria-label*='Send']",
+      "button[type='submit']"
+    ],
+    "response": [
+      "div[data-testid*='message']",
+      "article"
+    ],
+    "aria_fallbacks": {
+      "composer_roles": [
+        "textbox"
+      ],
+      "send_names": [
+        "Send",
+        "Submit"
+      ]
+    }
+  },
+  "gemini": {
+    "composer": [
+      "rich-textarea div[contenteditable='true']",
+      "textarea"
+    ],
+    "send": [
+      "button[aria-label*='Send']",
+      "button[aria-label*='Submit']"
+    ],
+    "response": [
+      "message-content",
+      "model-response",
+      "article"
+    ],
+    "aria_fallbacks": {
+      "composer_roles": [
+        "textbox"
+      ],
+      "send_names": [
+        "Send",
+        "Submit"
+      ]
+    }
+  }
+}

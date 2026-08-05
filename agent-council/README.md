@@ -32,7 +32,28 @@ powershell.exe -NoProfile -NonInteractive -File C:\Users\Bing\aurora\Workstation
 
 ## Web Council 模式
 
-Web Council 让用户手动邀请 ChatGPT、Claude、Gemini 网页会话参与讨论，但不抓取、不远控、不读取浏览器页面，也不保存任何 provider 凭据。Nexus 只生成 prompt；用户打开官方网页、复制 prompt、粘贴回复，并在本机 Council Board 中点击 Submit。
+默认 advisor workflow 以当前正常 ChatGPT 对话为唯一 orchestrator；Nexus 只把 Claude Web 与 Gemini Web 作为 advisor。每次 advisor turn 都会写入 task-scoped canonical transcript，并向每个 advisor 发送 deterministic `FULL_CONTEXT`：原始任务、所有 user/orchestrator/synthesis 事件、所有先前 advisor prompt，以及所有先前 advisor verbatim response。上下文不得截断、不得静默摘要；超过 `-ByteLimit` 时在发送前返回 `CONTEXT_TOO_LARGE` 和 byte telemetry。
+
+命令：
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -File C:\Users\Bing\aurora\Workstation\Nexus\agent-council\council.ps1 advisor-turn `
+  -Repo C:\path\to\repo -TaskId issue-127 -Task "原始任务" `
+  -CurrentUserMessage "用户最新消息" -OrchestratorMessage "ChatGPT 编排说明" `
+  -Providers claude,gemini -IdempotencyKey issue-127-turn-1 -ByteLimit 200000 -Timeout 600
+```
+
+输出始终是稳定 JSON。状态覆盖：`completed`、`login_required`、`human_verification_required`、`rate_limited`、`selector_changed`、`timed_out`、`failed`、`CONTEXT_TOO_LARGE`、`idempotency_conflict`。相同 `-IdempotencyKey` 与相同 payload 会 replay 已记录结果，不重复发送；同 key 不同 payload 返回 conflict。若某 provider 已记录 prompt 但未记录回复，重试同 key 不会再次发送，返回可恢复的 `timed_out` 状态。
+
+持久文件：
+
+- `advisor/transcript.jsonl`：canonical append-only source；首条为原始任务 `task` 事件，之后记录全部中心消息与 advisor 往返，并包含 monotonic sequence、UTC time、role/provider、exact body、SHA-256、idempotency key 和 metadata。
+- `advisor/transcript.md`：由 JSONL deterministic regeneration 得到。
+- `advisor/idempotency/<key>.json`：原子化幂等记录。
+
+浏览器 adapter 只使用官方 URL：Claude `https://claude.ai/`，Gemini `https://gemini.google.com/`。默认 profile 根目录为 `F:\NexusBrowserProfiles`，实际按 task/provider 隔离为 `F:\NexusBrowserProfiles\<task-or-room-id>\<provider>\`；默认 worktree 根目录为 `F:\NexusCouncilWorktrees`。Selector 位于 `selectors.json`，包含 CSS selector 与 ARIA/role fallback。Adapter 不读取、导出、打印或复制 browser credentials/storage，也不绕过 CAPTCHA、人机验证或登录墙；这些情况必须返回机器可读状态。
+
+手动 Web Council 仍作为 fallback：它让用户手动邀请 ChatGPT、Claude、Gemini 网页会话参与讨论，但不抓取、不远控、不读取浏览器页面，也不保存任何 provider 凭据。Nexus 只生成 prompt；用户打开官方网页、复制 prompt、粘贴回复，并在本机 Council Board 中点击 Submit。
 
 Provider ID 固定为：`chatgpt`、`claude`、`gemini`。
 

@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('doctor','run','status','web-start','web-submit','web-advance','web-finalize','web-status','web-serve')][string]$Command,
+    [Parameter(Mandatory=$true)][ValidateSet('doctor','run','status','web-start','web-submit','web-advance','web-finalize','web-status','web-serve','advisor-turn')][string]$Command,
     [string]$Repo = 'C:\Users\Bing\aurora\Workstation\Nexus',
     [string]$TaskId,
     [string]$Task,
@@ -13,6 +13,12 @@ param(
     [string]$Token,
     [switch]$DiscussionOnly,
     [string[]]$AcceptCommand = @(),
+    [string]$CurrentUserMessage = '',
+    [string]$OrchestratorMessage = '',
+    [string]$Synthesis = '',
+    [string]$Providers = 'claude,gemini',
+    [string]$IdempotencyKey,
+    [int]$ByteLimit = 200000,
     [int]$Timeout = 600
 )
 $ErrorActionPreference = 'Stop'
@@ -52,6 +58,10 @@ if ($Command -eq 'web-finalize') {
 if ($Command -eq 'web-serve') {
     $ArgsList += @('--bind', $Bind, '--port', "$Port")
     if ($Token) { $ArgsList += @('--token', $Token) }
+}
+if ($Command -eq 'advisor-turn') {
+    if (-not $IdempotencyKey) { throw '-IdempotencyKey is required.' }
+    $ArgsList += @('--task', $Task, '--current-user-message', $CurrentUserMessage, '--orchestrator-message', $OrchestratorMessage, '--synthesis', $Synthesis, '--providers', $Providers, '--idempotency-key', $IdempotencyKey, '--byte-limit', "$ByteLimit", '--timeout', "$Timeout")
 }
 & $Python @ArgsList
 exit $LASTEXITCODE

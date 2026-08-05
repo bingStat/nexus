@@ -16,9 +16,26 @@
 7. 回复中给出目标设备、broker_region、lease_owner、attempt、job ID、Council room 和 implementer worktree；不得泄漏 token、密码、私钥或凭据文件。
 8. Council 不自动 merge、push 或 deploy。合并和部署必须作为后续明确任务，并继续遵守 Nexus 的直接目标调度与风险确认规则。
 
+## ChatGPT-centered Advisor Workflow
+
+默认多模型顾问流程中，当前正常 ChatGPT 对话是唯一 orchestrator；Nexus 只调用 Victus 上已登录的 Claude Web 与 Gemini Web 会话作为 advisor。使用：
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -File C:\Users\Bing\aurora\Workstation\Nexus\agent-council\council.ps1 advisor-turn `
+  -Repo <repo> -TaskId <id> -Task <original-task> `
+  -CurrentUserMessage <message> -OrchestratorMessage <message-or-synthesis> `
+  -Providers claude,gemini -IdempotencyKey <stable-key> -ByteLimit 200000 -Timeout 600
+```
+
+每个 advisor turn 必须发送 deterministic `FULL_CONTEXT`，包含原始任务、所有 user/orchestrator/synthesis 事件、所有先前 advisor prompt 和所有先前 advisor verbatim response。不得截断、不得静默摘要、不得默认增量发送；超过 byte limit 时必须在发送前返回 `CONTEXT_TOO_LARGE`。同一 idempotency key 重试不得 duplicate send；同 key 不同 payload 必须报告 conflict。
+
+Canonical transcript 位于 room 的 `advisor/transcript.jsonl`，首条事件固定为原始任务 `task`，后续依次记录 user/orchestrator/synthesis、advisor prompt 与 verbatim response；Markdown 由 JSONL deterministic 生成。每条 JSONL 事件包含 sequence、UTC time、role/provider、exact body、SHA-256、idempotency key 和 metadata。
+
+Browser adapter 仅使用官方 Claude/Gemini URL，profile 按 `F:\NexusBrowserProfiles\<task-or-room-id>\<provider>\` 隔离；selectors 外置并提供 ARIA/role fallback。不得读取、打印、导出或复制浏览器凭据/storage，不得绕过 CAPTCHA、人机验证或登录墙；必须返回稳定 JSON 状态：`completed`、`login_required`、`human_verification_required`、`rate_limited`、`selector_changed`、`timed_out`、`failed` 或 `CONTEXT_TOO_LARGE`。
+
 ## Web Council 模式
 
-当用户明确要求 ChatGPT、Claude、Gemini 的高配额网页会话参与 Council 时，使用 Web Council。该模式必须保持 human-in-the-loop：Nexus 只生成 provider-specific prompt；用户自行打开官方网页、复制 prompt、粘贴回复，再通过 Council Board 或 `web-submit` 手动提交。不得抓取 provider 页面、远控浏览器、读取浏览器存储、自动登录、收集回复或保存 provider 凭据。
+当自动 advisor flow 不可用或用户明确要求手动 fallback 时，使用 Web Council。该模式必须保持 human-in-the-loop：Nexus 只生成 provider-specific prompt；用户自行打开官方网页、复制 prompt、粘贴回复，再通过 Council Board 或 `web-submit` 手动提交。不得抓取 provider 页面、远控浏览器、读取浏览器存储、自动登录、收集回复或保存 provider 凭据。
 
 命令序列：
 

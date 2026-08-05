@@ -15,6 +15,8 @@ from typing import Any
 
 import web_board
 import web_council
+import advisor_flow
+import task_ids
 
 SESSION = "nexus-council"
 ROLES = ("architect", "reviewer", "implementer", "verifier")
@@ -29,8 +31,13 @@ def now_iso() -> str:
 
 
 def slugify(value: str, limit: int = 24) -> str:
-    value = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-").lower()
-    return (value or "task")[:limit]
+    normalized = task_ids.normalize_task_id(value)
+    if limit and len(normalized) > limit:
+        return task_ids.agent_task_token(normalized, limit)
+    return normalized
+
+def normalize_task_id(task_id: str) -> str:
+    return task_ids.normalize_task_id(task_id)
 
 
 def run(cmd: list[str], *, cwd: Path | None = None, timeout: int = 120, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -80,6 +87,7 @@ def validate_repo(repo: Path) -> Path:
 
 
 def worktree_path(repo: Path, task_id: str, role: str) -> Path:
+    task_id = normalize_task_id(task_id)
     configured = os.environ.get("NEXUS_COUNCIL_WORKTREE_ROOT", "").strip()
     if configured:
         root = Path(configured)
@@ -90,11 +98,13 @@ def worktree_path(repo: Path, task_id: str, role: str) -> Path:
 
 
 def room_path(repo: Path, task_id: str) -> Path:
+    task_id = normalize_task_id(task_id)
     root = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
     return root / "Nexus" / "agent-council" / "rooms" / repo.name / task_id
 
 
 def ensure_worktree(repo: Path, task_id: str, role: str, *, writable: bool) -> Path:
+    task_id = normalize_task_id(task_id)
     path = worktree_path(repo, task_id, role)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and (path / ".git").exists():
@@ -219,7 +229,9 @@ def prompt_runtime(runtime: "RoleRuntime", prompt: str, timeout_seconds: int, ro
     return output_path.read_text(encoding="utf-8-sig", errors="replace").strip()
 
 def agent_name(role: str, task_id: str) -> str:
-    return f"{role}-{slugify(task_id, 10)}"[:32]
+    role_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", role).strip("-").lower() or "agent"
+    token_limit = max(8, 31 - len(role_slug))
+    return f"{role_slug}-{task_ids.agent_task_token(task_id, token_limit)}"[:32]
 
 
 @dataclass
@@ -551,6 +563,39 @@ def web_hybrid_implement(repo: Path, task_id: str, timeout_seconds: int, accepta
     return 0
 
 
+def advisor_turn(
+    repo: Path,
+    task_id: str,
+    task_text: str,
+    current_user_message: str,
+    orchestrator_message: str,
+    synthesis: str,
+    providers: str,
+    idempotency_key: str,
+    byte_limit: int,
+    timeout_seconds: int,
+) -> int:
+    flow = advisor_flow.AdvisorFlow(repo, task_id, task_text, room_path(repo, task_id), byte_limit=byte_limit)
+    result = flow.advisor_turn(
+        current_user_message=current_user_message,
+        orchestrator_message=orchestrator_message,
+        synthesis=synthesis,
+        providers=advisor_flow.parse_providers(providers),
+        idempotency_key=idempotency_key,
+        timeout_seconds=timeout_seconds,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0 if result.get("status") in {
+        "completed",
+        "CONTEXT_TOO_LARGE",
+        "login_required",
+        "human_verification_required",
+        "rate_limited",
+        "selector_changed",
+        "timed_out",
+    } else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nexus + Herdr Agent Council orchestrator")
     sub = parser.add_subparsers(dest="command", required=True); sub.add_parser("doctor")
@@ -562,10 +607,11 @@ def main() -> int:
     wfp = sub.add_parser("web-finalize"); wfp.add_argument("--repo", required=True); wfp.add_argument("--task-id", required=True); wfp.add_argument("--timeout", type=int, default=600); wfp.add_argument("--accept-command", action="append", default=[])
     wsp2 = sub.add_parser("web-status"); wsp2.add_argument("--repo", required=True); wsp2.add_argument("--task-id", required=True)
     wbp = sub.add_parser("web-serve"); wbp.add_argument("--repo", required=True); wbp.add_argument("--task-id", required=True); wbp.add_argument("--bind", default="127.0.0.1"); wbp.add_argument("--port", type=int, default=8765); wbp.add_argument("--token")
+    atp = sub.add_parser("advisor-turn"); atp.add_argument("--repo", required=True); atp.add_argument("--task-id", required=True); atp.add_argument("--task", default=""); atp.add_argument("--current-user-message", default=""); atp.add_argument("--orchestrator-message", default=""); atp.add_argument("--synthesis", default=""); atp.add_argument("--providers", default="claude,gemini"); atp.add_argument("--idempotency-key", required=True); atp.add_argument("--byte-limit", type=int, default=200000); atp.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args()
     try:
         if args.command == "doctor": ensure_server(); return doctor()
-        repo = validate_repo(Path(args.repo)); task_id = slugify(args.task_id)
+        repo = validate_repo(Path(args.repo)); task_id = normalize_task_id(args.task_id)
         if args.command == "status": return status(repo, task_id)
         if args.command == "web-start": return web_start(repo, task_id, args.task, args.mode)
         if args.command == "web-submit": return web_submit(repo, task_id, args.provider, args.round, args.response_file, args.overwrite)
@@ -575,6 +621,8 @@ def main() -> int:
         if args.command == "web-serve":
             web_board.serve(room_path(repo, task_id), args.bind, args.port, args.token)
             return 0
+        if args.command == "advisor-turn":
+            return advisor_turn(repo, task_id, args.task, args.current_user_message, args.orchestrator_message, args.synthesis, args.providers, args.idempotency_key, args.byte_limit, args.timeout)
         room = council_run(repo, task_id, args.task, args.timeout, args.discussion_only, args.accept_command); print(json.dumps({"status": "completed", "room": str(room)}, ensure_ascii=False)); return 0
     except (CouncilError, web_council.WebCouncilError, subprocess.TimeoutExpired, KeyError, ValueError) as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False), file=sys.stderr); return 1

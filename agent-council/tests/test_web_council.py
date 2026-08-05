@@ -184,7 +184,10 @@ class BoardSecurityTests(unittest.TestCase):
                 room=root / "rooms" / "board-task",
             )
             council.start()
-            server = ThreadingHTTPServer(("127.0.0.1", 0), web_board.make_handler(council.room, "secret"))
+            try:
+                server = ThreadingHTTPServer(("127.0.0.1", 0), web_board.make_handler(council.room, "secret"))
+            except PermissionError as exc:
+                self.skipTest(f"local test socket unavailable in this sandbox: {exc}")
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             port = server.server_address[1]
