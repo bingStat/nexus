@@ -52,3 +52,43 @@ Victus Agent          N1 / Oracle / VSC Agent
   - FastMCP Tools (`list_devices`, `get_status`, `execute_command`, `get_job`)
   - 接入 `nexus.bings.app/sse` 全天候远程访问与 Bearer 鉴权
   - 统一 SSH 密钥至 `C:/Users/Bing/.ssh/victus`
+
+---
+
+## 2026-08-06 最终生产基线
+
+> 本节是当前权威架构；上方早期架构图仅作为历史演进记录。
+
+```text
+ChatGPT / Control Client
+        │
+        ▼
+https://nexus-api.bings.app
+Oracle Global API 2.1.4
+   ┌────┴────┐
+   ▼         ▼
+EU Broker    CN Broker
+Oracle       ThinkCenter
+   │         │
+   ├─ oracle ├─ thinkcenter
+   ├─ vsc    ├─ n1
+   ├─ victus └─ ax3600 (managed target)
+   └─ victus-wsl
+```
+
+浏览器顾问主链路：
+
+```text
+ChatGPT → Nexus → victus-wsl → Windows Playwright MCP
+→ Chrome Profile 3 Playwright Extension → Claude / Gemini
+```
+
+最终原则：Agent 在线时直接向规范 `target_device` 下发；Broker 只能改变传输路径，不得改派目标。Supabase 只承担设备目录、心跳与审计镜像，不作为正常热队列。
+
+### 结项状态
+
+- 软件与服务级结项：**GO**；
+- Release commit：`297d3db`；
+- Release tag：`nexus-v2.5-final-20260806`；
+- 完整报告：[`结项报告-2026-08-06.md`](./结项报告-2026-08-06.md)；
+- 唯一维护期验证项：Victus Windows 整机重启演练。
