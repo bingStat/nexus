@@ -1,0 +1,9 @@
+.......................[web-board] "GET /api/status HTTP/1.1" 403 -
+[web-board] "GET /api/status HTTP/1.1" 200 -
+[web-board] "POST /api/submit HTTP/1.1" 403 -
+[web-board] "POST /api/submit HTTP/1.1" 200 -
+..........
+----------------------------------------------------------------------
+Ran 33 tests in 3.849s
+
+OK
