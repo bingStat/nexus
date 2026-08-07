@@ -1,88 +1,229 @@
-# 🌐 Nexus: Multi-Node Distributed Cluster Agent & FastMCP Server
+# 🌐 Nexus: Distributed Multi-Node Control Plane
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![FastMCP](https://img.shields.io/badge/Protocol-Model_Context_Protocol_(MCP)-green.svg)](https://modelcontextprotocol.io/)
-[![Cloudflare Tunnel](https://img.shields.io/badge/Transport-Cloudflare_Tunnel-orange.svg)](https://nexus.bings.app)
+[![MCP](https://img.shields.io/badge/Protocol-Model_Context_Protocol-green.svg)](https://modelcontextprotocol.io/)
+[![Release](https://img.shields.io/badge/release-nexus--v2.5--final--20260806-success.svg)](FINAL_ACCEPTANCE_REPORT.md)
 
-**Nexus** 是一套高性能、低延迟的**跨端分布式硬件集群智能控制中枢**。系统打破了传统局域网限制与 30 秒 HTTP 超时壁垒，实现了对 Linux 服务器（ThinkCenter / Oracle）、Windows 主力工作站（Victus）、KU Leuven HPC 超算集群（VSC）以及 OpenWrt 软路由（N1）的统一调度与全天候远程操控。
+**Nexus** 是面向个人异构基础设施的跨端分布式智能控制平面。它让 ChatGPT、MCP 客户端和受控自动化程序，以明确目标、区域就近、幂等执行和真实回执的方式，统一控制 Linux、Windows、WSL、HPC 与 OpenWrt 节点。
 
----
-
-## 🌟 核心特性 (Key Features)
-
-- ⚡ **双传输模式 (Dual Transport)**: 
-  - **STDIO 模式**: 供 Cursor / Antigravity / Claude Desktop 本地直接高并发调用。
-  - **HTTP / SSE 模式**: 基于 FastAPI/Uvicorn 暴露 `/sse` 节点，挂载于 `https://nexus.bings.app/sse`，供网页版 ChatGPT / Gemini / Claude 全天候无缝连接。
-- 🛡️ **高危指令防爆拦截器 (Security Interceptor)**: 内置对 `rm -rf`, `shutdown`, `reboot`, `format`, `del /s /q`, `iptables` 等毁灭性指令的正则拦截逻辑，强制二次安全确认。
-- 🚀 **零参数一键安装 (One-Liner Installers)**: 任意 Linux / macOS / Windows 新节点只需一行命令，自动提取本机 Hostname 完成常驻守护部署。
-- 🔄 **30 秒超时免疫机制 (The Pull & CAS Protocol)**: 通过 Supabase Cloud REST API + 状态 CAS 锁，彻底规避 Web AI 客户端 30 秒强制超时断连。
+当前生产基线为 **Nexus v2.5-regional**。统一入口是 `https://nexus-api.bings.app`，Global API 位于 Oracle，EU 与 CN 各自拥有区域 Broker。Supabase 只保留设备目录、心跳、审计和异步镜像职责，不再承担正常任务热队列。
 
 ---
 
-## 📐 架构拓扑 (Architecture Topology)
+## 核心原则
+
+- **直接目标调度**：Agent 在线时，命令必须直接下发到用户指定的 `target_device`。
+- **目标不可变**：Broker 故障转移只能改变传输路径，不能把任务改派到另一台设备。
+- **真实回执**：只有获得 `completed`、正确 `exit_code` 和可验证输出后才报告成功。
+- **幂等执行**：每个任务包含 UUID、idempotency key、lease、attempt，并由本地 execution ledger 防止重复执行。
+- **救援有界**：SSH、Victus WSL、Desktop Commander 和云控制台只在目标 Agent 失效时使用，并明确标注为救援路径。
+- **凭据不外泄**：Token、密码、Cookie、私钥和浏览器会话数据不进入聊天、日志、Git 或 transcript。
+
+---
+
+## 最新生产架构
+
+```mermaid
+flowchart TB
+    C[ChatGPT / MCP Client / Control Client]
+    G[Oracle Global API 2.1.4<br/>nexus-api.bings.app]
+    E[Oracle EU Broker]
+    N[ThinkCenter CN Broker]
+    S[(Supabase<br/>Directory · Heartbeat · Audit Mirror)]
+
+    C -->|HTTPS / MCP / REST| G
+    G -->|EU target routing| E
+    G -->|CN target routing| N
+    G -. async mirror .-> S
+
+    E --> O[oracle]
+    E --> VSC[vsc]
+    E --> VW[victus]
+    E --> WSL[victus-wsl]
+    E --> EB[elitebook]
+
+    N --> TC[thinkcenter]
+    N --> N1[n1]
+    N --> AX[ax3600<br/>managed target]
+
+    WSL --> BA[Nexus Browser Adapter]
+    BA --> PM[Windows Playwright MCP]
+    PM --> CP[Chrome Profile 3<br/>Playwright Extension]
+    CP --> CL[Claude]
+    CP --> GM[Gemini]
+
+    DC[Desktop Commander / SSH / Cloud Console]
+    DC -. bounded rescue only .-> VW
+    DC -. bounded rescue only .-> TC
+```
+
+### 关键数据流
 
 ```text
-                  +-----------------------------------+
-                  |      ChatGPT / Custom GPTs        |
-                  |     / Remote AI Assistants        |
-                  +-----------------+-----------------+
-                                    |
-                                    | HTTPS SSE Remote Connection
-                                    v
-                     nexus.bings.app (Cloudflare Tunnel)
-                                    |
-                                    v
-                        ThinkCenter (Ubuntu 24.04)
-                     Nexus FastMCP Server (SSE Mode)
-                                    |
-            +-----------------------+-----------------------+
-            |                                               |
-            v                                               v
-   Supabase Cloud (PostgreSQL)                     Local STDIO MCP Server
-(devices & commands 统一状态库)                  (Victus 本地开发/调试入口)
-            ^
-            | (心跳与指令轮询)
-+-----------+-----------+
-|                       |
-Victus Agent          N1 / Oracle / VSC Agent
+ChatGPT / MCP Client
+        │
+        ▼
+https://nexus-api.bings.app
+Oracle Global API 2.1.4
+        │
+        ├────────────── EU target ──────────────► Oracle EU Broker
+        │                                          ├─ oracle
+        │                                          ├─ vsc
+        │                                          ├─ victus
+        │                                          ├─ victus-wsl
+        │                                          └─ elitebook
+        │
+        └────────────── CN target ──────────────► ThinkCenter CN Broker
+                                                   ├─ thinkcenter
+                                                   ├─ n1
+                                                   └─ ax3600 (managed target)
+
+Browser advisor path:
+ChatGPT → Nexus → victus-wsl → Windows Playwright MCP
+        → Chrome Profile 3 Extension → Claude / Gemini
 ```
 
 ---
 
-## 🚀 极速一键部署 (One-Liner Installers)
+## 区域与节点职责
 
-在任意物理机器（Linux / macOS / Windows / 软路由 / HPC）上，自动识别主机名完成常驻 Agent 部署：
+| 规范 ID | 平台 | 区域 | 角色 |
+|---|---|---|---|
+| `oracle` | Ubuntu Linux | EU | Global API、EU Broker、外部探针与全球跳板 |
+| `vsc` | RHEL / HPC | EU | KU Leuven 计算节点，长任务通过 Slurm |
+| `victus` | Windows 11 | EU | 主力工作站与 Windows 原生任务 |
+| `victus-wsl` | WSL2 | EU | 浏览器顾问主节点与 Linux 执行环境 |
+| `elitebook` | Windows / Linux | EU | 移动工作节点 |
+| `thinkcenter` | Ubuntu Linux | CN | 家庭生产中枢与 CN Broker |
+| `n1` | iStoreOS / OpenWrt | CN | 网络救援、路由和家庭 LAN 管理 |
+| `ax3600` | Managed target | CN | 被管理网络设备，不伪装为 Agent |
 
-### 1. Linux / macOS / 云服务器 / 软路由 (Bash 零参数安装)
+别名只用于 Agent 匹配，不得在设备目录中创建重复设备记录。
+
+---
+
+## Browser Advisor
+
+Nexus 可以复用用户常用 Chrome Profile 中已经存在的 Claude 与 Gemini 登录会话，不复制 Cookie、不导出密码，也不调用隐藏 Provider API。
+
+正式链路：
+
+```text
+Nexus job
+→ victus-wsl Nexus Agent
+→ browser-bridge/nexus_browser_adapter.py
+→ Windows Playwright MCP
+→ Chrome Profile 3 Playwright Extension
+→ Claude / Gemini visible web UI
+```
+
+Browser Adapter 提供：
+
+- Claude / Gemini Provider 专用页面完成检测；
+- JSON 结构化回执；
+- append-only JSONL 与 Markdown transcript；
+- prompt / response SHA-256；
+- idempotency ledger；
+- 硬超时和明确失败类型；
+- 不绕过 CAPTCHA、Cloudflare 真人验证或 MFA。
+
+完整双轮交叉评审证据位于 `artifacts/acceptance/nexus-final-review/`。
+
+---
+
+## 任务生命周期与 API
+
+```text
+pending → claimed → running → completed / failed / timeout / cancelled
+```
+
+普通控制只使用 Global API 或等价 MCP 工具：
+
+| 操作 | HTTP 接口 | 说明 |
+|---|---|---|
+| 健康检查 | `GET /health` | Global API 版本、位置与 Broker 映射 |
+| 设备列表 | `GET /api/devices` | 规范设备、心跳年龄和在线状态 |
+| 单目标执行 | `POST /api/execute` | 明确指定 `device`、命令、等待和超时 |
+| 批量执行 | `POST /api/execute-batch` | 每个目标创建独立 job |
+| 查询任务 | `GET /api/jobs/{job_id}` | 获取长任务最终状态和真实输出 |
+
+等价 MCP 工具通常包括：
+
+- `list_devices()`
+- `get_status(device_id)`
+- `execute_command(device, command, wait_seconds, timeout_ms)`
+- `get_job(job_id)`
+
+普通用户和普通 Agent 不应直接操作 Broker 的 `/submit`、`/claim` 和 `/complete`。
+
+---
+
+## 一键部署
+
+### Linux / macOS / 云服务器 / OpenWrt
+
 ```bash
-curl -sSL https://nexus.bings.app/install.sh | bash
+curl -fsSL https://nexus-api.bings.app/install.sh | bash
 ```
 
-### 2. Windows 工作站 (PowerShell 零参数安装)
+显式指定规范设备 ID：
+
+```bash
+curl -fsSL https://nexus-api.bings.app/install.sh | bash -s -- victus-wsl
+```
+
+### Windows
+
 ```powershell
-irm https://nexus.bings.app/install.ps1 | iex
+irm https://nexus-api.bings.app/install.ps1 | iex
 ```
 
----
-
-## 🛠️ FastMCP 工具集 (Exposed MCP Tools)
-
-| 工具名称 | 功能描述 | 核心参数 |
-| :--- | :--- | :--- |
-| **`list_devices`** | 获取全集群注册设备列表、在线状态与最后心跳时间 | 无 |
-| **`get_status`** | 查询指定节点的详细运行状态与硬件心跳 | `device_id: str` |
-| **`execute_command`** | 安全派发 Shell / PowerShell 命令至目标设备并同步获取回执 | `device: str`, `command: str`, `wait_seconds: int = 10`, `allow_dangerous: bool = False` |
-| **`get_job`** | 轮询/查询指定 Command ID 的执行状态与控制台输出 | `job_id: str` |
+生产节点必须使用单实例锁和平台监督器：Linux 使用 systemd，Windows 使用计划任务，OpenWrt 使用 procd，VSC 使用 watchdog 与共享目录锁。
 
 ---
 
-## 🤖 AI 网页端接入指南 (System Prompt & Guidance)
+## 安全与恢复边界
 
-详细的系统提示词与典型使用场景示范请参阅：[nexus_system_prompt.md](nexus_system_prompt.md)。
+- 不显示或提交 API Token、Cloudflare Token、密码、私钥、Cookie 或完整凭据文件。
+- Windows 使用 PowerShell；Linux 使用非交互 Bash；OpenWrt 使用 POSIX ash；VSC 长任务使用 Slurm。
+- API 等待超时不等于任务失败，应继续按原 job ID 查询，不生成语义重复的新任务。
+- Agent 失效时，恢复顺序是：本机监督器 → Broker 健康 → Tailscale/隧道 → 标明的救援通道。
+- 整机重启、WAN、VLAN、PPPoE、防火墙、数据删除等高风险操作需要明确确认、备份与回滚路径。
 
 ---
 
-## 📄 开源协议 (License)
+## 验收与发布状态
 
-本项目基于 [MIT License](LICENSE) 协议开源。
+软件与服务级结项已经通过：
+
+- Global API `2.1.4`；
+- Victus Windows Agent 连续 10/10 快速任务成功；
+- timeout 返回 `124` 后 worker 可继续领取任务；
+- Claude 与 Gemini 真实网页调用成功；
+- 四轮交叉讨论 `all_completed=true`；
+- 33/33 单元测试通过；
+- Secret scan 通过；
+- release commit：`297d3db`；
+- release tag：`nexus-v2.5-final-20260806`。
+
+Victus Windows 整机重启演练保留到明确维护窗口执行，不被描述为已经完成。
+
+---
+
+## 文档索引
+
+- [最终结项与验收报告](FINAL_ACCEPTANCE_REPORT.md)
+- [恢复运行手册](RECOVERY_RUNBOOK.md)
+- [安全基线](SECURITY.md)
+- [Nexus 系统提示词](nexus_system_prompt.md)
+- [.ai 九大文档体系](.ai/README.md)
+- [.ai 完整结项报告](.ai/结项报告-2026-08-06.md)
+- [Browser Adapter](browser-bridge/nexus_browser_adapter.py)
+- [验收证据](artifacts/acceptance/)
+
+---
+
+## License
+
+本项目基于 [MIT License](LICENSE) 发布。
