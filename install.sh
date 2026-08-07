@@ -1,187 +1,88 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-NODE_NAME="${1:-$(hostname -s 2>/dev/null || hostname)}"
-API_KEY="${NEXUS_API_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5cXpnbXpseWt1ZnNidG15a3B3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNDk0OTEsImV4cCI6MjEwMDgyNTQ5MX0.OAtknQj1k5ggmHmMrlQHpQqtu9T_tl_VEpiW3DgPCng}"
-API_URL="${NEXUS_API_URL:-https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1}"
-AGENT_DIR="$HOME/.nexus-agent"
+DEVICE_ID="${1:-${NEXUS_DEVICE_ID:-}}"
+BROKER_URL="${NEXUS_BROKER_URL:-}"
+TOKEN="${NEXUS_BROKER_TOKEN:-}"
+SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/main}"
+INSTALL_DIR="/opt/nexus-agent"
+CONFIG_FILE="/etc/nexus-agent/config.json"
 
-echo "=================================================="
-echo " 🚀 Nexus Multi-Device Agent Installer"
-echo "=================================================="
-echo "📌 Node Name   : $NODE_NAME"
-echo "📌 Target API  : $API_URL"
-echo "📌 Install Dir : $AGENT_DIR"
-echo "--------------------------------------------------"
+fail() { printf 'nexus install: %s\n' "$*" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || fail "run as root"
+[ -n "$DEVICE_ID" ] || fail "device id required: install.sh <canonical-device-id>"
+[ -n "$BROKER_URL" ] || fail "NEXUS_BROKER_URL is required"
+[ -n "$TOKEN" ] || fail "NEXUS_BROKER_TOKEN is required"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+command -v curl >/dev/null 2>&1 || fail "curl is required"
 
-# Cleanup legacy containers and old content
-echo "🧹 Cleaning up legacy services (dc-backend, etc.)..."
-if command -v docker &> /dev/null; then
-    docker rm -f dc-backend dc-agent desktop-commander 2>/dev/null || true
-fi
-pkill -f "dc-backend" 2>/dev/null || true
-pkill -f "dc_backend" 2>/dev/null || true
+case "$DEVICE_ID" in
+  oracle|vsc|victus-wsl|elitebook|thinkcenter|n1|ax3600) ;;
+  *) fail "unsupported canonical device id: $DEVICE_ID" ;;
+esac
 
-# Cleanup legacy crontabs
-(crontab -l 2>/dev/null | grep -v "dc-backend\|dc-agent\|desktop-commander\|agent_v2.py" || true) | crontab - 2>/dev/null || true
+mkdir -p "$INSTALL_DIR" "$(dirname "$CONFIG_FILE")"
+curl -fsSL "$SOURCE_BASE/agent/unix_agent.py" -o "$INSTALL_DIR/agent.py"
+python3 -m venv "$INSTALL_DIR/venv"
+"$INSTALL_DIR/venv/bin/pip" install --disable-pip-version-check --quiet requests
+python3 - "$CONFIG_FILE" "$DEVICE_ID" "$BROKER_URL" "$TOKEN" <<'PY'
+import json, os, sys
+path, device_id, broker_url, token = sys.argv[1:]
+data = {
+    "device_id": device_id,
+    "device_name": device_id,
+    "broker_urls": [broker_url.rstrip("/")],
+    "api_token": token,
+    "poll_seconds": 0.5,
+    "heartbeat_seconds": 30,
+    "max_workers": 2,
+}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+os.chmod(path, 0o600)
+PY
 
-mkdir -p "$AGENT_DIR"
-
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Error: python3 is required on this machine."
-    exit 1
-fi
-
-cat << 'EOF' > "$AGENT_DIR/agent.py"
-import time
-import subprocess
-import requests
-import socket
-import os
-import sys
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-
-def acquire_single_instance_lock():
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(('127.0.0.1', 49159))
-        return sock
-    except Exception:
-        print("[Nexus Agent] Another instance is running. Exiting.", flush=True)
-        sys.exit(0)
-
-_instance_lock = acquire_single_instance_lock()
-
-API_URL = os.getenv("NEXUS_API_URL", "https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1")
-API_KEY = os.getenv("NEXUS_API_KEY", "")
-NODE_NAME_LOWER = "$NODE_NAME".lower()
-NODE_ALIASES = list(set([
-    "$NODE_NAME".lower(),
-    "$NODE_NAME",
-    socket.gethostname().lower(),
-    "all",
-    "broadcast"
-]))
-if "thinkcenter" in NODE_NAME_LOWER or "tc" in NODE_NAME_LOWER:
-    NODE_ALIASES.extend(["thinkcenter", "tcr", "tc"])
-elif "oracle" in NODE_NAME_LOWER:
-    NODE_ALIASES.extend(["oracle", "oracle-amd"])
-elif "istoreos" in NODE_NAME_LOWER or "n1" in NODE_NAME_LOWER:
-    NODE_ALIASES.extend(["istoreos", "n1", "n1-istoreos"])
-
-def log(msg):
-    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
-
-def base_headers():
-    h = {"Content-Type": "application/json"}
-    if API_KEY:
-        h["Authorization"] = f"Bearer {API_KEY}"
-        h["apikey"] = API_KEY
-    return h
-
-def heartbeat():
-    try:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        requests.post(
-            f"{API_URL}/devices",
-            headers={**base_headers(), "Prefer": "resolution=merge-duplicates"},
-            json={
-                "device_id": DEVICE_ID,
-                "name": DEVICE_NAME,
-                "status": "online",
-                "last_seen": now_iso,
-            },
-            timeout=5
-        )
-        log(f"♥ heartbeat OK ({DEVICE_ID})")
-    except Exception as e:
-        log(f"♥ heartbeat FAIL: {e}")
-
-def run_task(task):
-    task_id = task["id"]
-    cmd_str = task.get("command", "")
-    timeout_sec = task.get("timeout_ms", 30000) / 1000.0
-
-    log(f"⚡ [{task_id[:8]}] RUN: {cmd_str[:80]}")
-
-    try:
-        result = subprocess.run(
-            cmd_str,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout_sec
-        )
-        output = result.stdout.strip()
-        status = "completed" if result.returncode == 0 else "failed"
-    except subprocess.TimeoutExpired:
-        output = f"Error: command timed out after {timeout_sec}s"
-        status = "failed"
-    except Exception as e:
-        output = f"Error: {e}"
-        status = "failed"
-
-    log(f"✅ [{task_id[:8]}] {status.upper()} | {output[:60]}")
-
-    try:
-        requests.patch(
-            f"{API_URL}/commands?id=eq.{task_id}",
-            headers=base_headers(),
-            json={"status": status, "output": output},
-            timeout=10
-        )
-    except Exception as e:
-        log(f"❌ PATCH failed [{task_id[:8]}]: {e}")
-
-executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
-last_hb = 0.0
-
-log("==================================================")
-log(f" Nexus Agent v2 | DEVICE={DEVICE_ID} | API={API_URL}")
-log("==================================================")
-
-while True:
-    now = time.time()
-    if now - last_hb > HB_SEC:
-        heartbeat()
-        last_hb = now
-
-    try:
-        or_terms = ",".join([f"target_device.ilike.{alias}" for alias in NODE_ALIASES if alias])
-        q = f"status=eq.pending&or=({or_terms})&order=created_at.asc&limit=5"
-        resp = requests.get(f"{API_URL}/commands?{q}", headers=base_headers(), timeout=10)
-
-        if resp.ok:
-            for task in resp.json():
-                tid = task["id"]
-                upd = requests.patch(
-                    f"{API_URL}/commands?id=eq.{tid}&status=eq.pending",
-                    headers={**base_headers(), "Prefer": "return=representation"},
-                    json={"status": "running"},
-                    timeout=5
-                )
-                if upd.ok and upd.json():
-                    executor.submit(run_task, task)
-    except Exception as e:
-        log(f"Poll error: {e}")
-
-    time.sleep(POLL_SEC)
+if [ -f /etc/openwrt_release ]; then
+  cat > /etc/init.d/nexus-agent <<'EOF'
+#!/bin/sh /etc/rc.common
+START=95
+USE_PROCD=1
+start_service() {
+  procd_open_instance
+  procd_set_param command /opt/nexus-agent/venv/bin/python /opt/nexus-agent/agent.py
+  procd_set_param env NEXUS_CONFIG_FILE=/etc/nexus-agent/config.json
+  procd_set_param respawn 5 5 0
+  procd_set_param stdout 1
+  procd_set_param stderr 1
+  procd_close_instance
+}
 EOF
+  chmod 755 /etc/init.d/nexus-agent
+  /etc/init.d/nexus-agent enable
+  /etc/init.d/nexus-agent restart
+else
+  command -v systemctl >/dev/null 2>&1 || fail "systemd is required on Linux"
+  cat > /etc/systemd/system/nexus-agent.service <<'EOF'
+[Unit]
+Description=Nexus Agent
+After=network-online.target
+Wants=network-online.target
 
-pkill -f "$AGENT_DIR/agent.py" 2>/dev/null || true
+[Service]
+Type=simple
+Environment=NEXUS_CONFIG_FILE=/etc/nexus-agent/config.json
+ExecStart=/opt/nexus-agent/venv/bin/python /opt/nexus-agent/agent.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
 
-START_CMD="nohup env DEVICE_NAME=\"$NODE_NAME\" DEVICE_ID=\"$NODE_NAME\" NEXUS_API_KEY=\"$API_KEY\" NEXUS_API_URL=\"$API_URL\" python3 \"$AGENT_DIR/agent.py\" > \"$AGENT_DIR/agent.log\" 2>&1 &"
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now nexus-agent.service
+  systemctl is-active --quiet nexus-agent.service
+fi
 
-# Install into crontab for persistence
-(crontab -l 2>/dev/null | grep -v "$AGENT_DIR/agent.py" ; echo "@reboot $START_CMD") | crontab -
-
-# Start it now
-eval "$START_CMD"
-
-echo "=================================================="
-echo " 🎉 Nexus Agent successfully deployed & running for [$NODE_NAME]!"
-echo " 📄 Log file: $AGENT_DIR/agent.log"
-echo "=================================================="
+printf 'Nexus agent installed for %s\n' "$DEVICE_ID"

@@ -11,7 +11,7 @@ export default {
     const user = env.AUTH_USER || 'admin';
     const pass = env.AUTH_PASS || 'nexus2026';
     const expectedAuth = 'Basic ' + btoa(user + ':' + pass);
-    
+
     if (!authHeader || authHeader !== expectedAuth) {
       return new Response('Unauthorized', {
         status: 401,

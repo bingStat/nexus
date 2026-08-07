@@ -248,3 +248,25 @@ Nexus/
 ```
 
 运行产物、浏览器缓存和本地备份不属于源码，由 `.gitignore` 管理。
+
+## 一键安装
+
+安装器只发布 `agent/` 中已经验收的 Agent，不内嵌 Agent 代码，也不直连 Supabase。
+
+### Linux / OpenWrt
+
+```bash
+sudo NEXUS_BROKER_URL="<regional-broker>" \
+  NEXUS_BROKER_TOKEN="<token>" \
+  bash install.sh <canonical-device-id>
+```
+
+Linux 使用 systemd；OpenWrt 使用 procd。
+
+### Windows
+
+```powershell
+.\install.ps1 -DeviceId victus -BrokerUrl "<regional-broker>" -Token "<token>"
+```
+
+Windows 只注册一个 `NexusAgent` 计划任务。

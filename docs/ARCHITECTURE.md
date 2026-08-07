@@ -1,8 +1,8 @@
 # Nexus æž¶æž„è®¾è®¡ä¸Žæ–¹æ¡ˆå¯¹æ¯”æ–‡æ¡£ (Nexus Multi-Node Architecture Specification)
 
-**ç‰ˆæœ¬**ï¼šv1.0  
-**æ—¥æœŸ**ï¼š2026-07-26  
-**å½’æ¡£ä½ ç½®**ï¼š`~/aurora/Workstation/Nexus/`  
+**ç‰ˆæœ¬**ï¼šv1.0
+**æ—¥æœŸ**ï¼š2026-07-26
+**å½’æ¡£ä½ ç½®**ï¼š`~/aurora/Workstation/Nexus/`
 **系统名称**：Nexus (Nexus Agent Cluster)
 
 ---

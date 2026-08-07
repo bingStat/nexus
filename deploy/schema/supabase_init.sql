@@ -26,8 +26,8 @@ ALTER TABLE public.commands ENABLE ROW LEVEL SECURITY;
 -- 4. 创建策略：允许带有正确的 API KEY (通过 authenticated 角色，或者我们直接放行所有 service_role)
 -- 建议在 Supabase 中，你只需使用 `service_role` key 或者 `anon` key。
 -- 为了简化架构且兼顾安全，我们允许带有有效 JWT (anon/service_role) 的请求拥有所有权限。
-CREATE POLICY "Allow ALL for authenticated users on devices" 
+CREATE POLICY "Allow ALL for authenticated users on devices"
 ON public.devices FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow ALL for authenticated users on commands" 
+CREATE POLICY "Allow ALL for authenticated users on commands"
 ON public.commands FOR ALL USING (true) WITH CHECK (true);

@@ -34,7 +34,7 @@ def list_devices() -> List[Dict[str, Any]]:
 def get_status(device_id: str) -> Dict[str, Any]:
     """
     Get detailed running status and registration info for a specific target device in Nexus cluster.
-    
+
     Args:
         device_id: Device ID or hostname (e.g., 'thinkcenter', 'victus', 'oracle', 'vsc', 'n1')
     """
@@ -55,7 +55,7 @@ def execute_command(
 ) -> Dict[str, Any]:
     """
     Execute a shell command on a target device via Nexus command queue.
-    
+
     Args:
         device: Target device name/ID (e.g. 'thinkcenter', 'victus', 'oracle')
         command: Shell command string to execute on the target machine
@@ -70,7 +70,7 @@ def execute_command(
     try:
         cmd_record = api_create_command(target_device=device, command_str=command)
         job_id = cmd_record.get("id")
-        
+
         if not job_id:
             return {"status": "failed", "error": "Failed to create command record", "record": cmd_record}
 
@@ -90,7 +90,7 @@ def execute_command(
 def get_job(job_id: str) -> Dict[str, Any]:
     """
     Retrieve the status and stdout/stderr output of a previously dispatched command by job UUID.
-    
+
     Args:
         job_id: UUID of the command job returned by execute_command
     """

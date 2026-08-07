@@ -63,7 +63,7 @@ def wait_for_command(job_id: str, max_wait_seconds: int = 10, poll_interval: flo
     """Poll job status until completed/failed/timeout or max_wait_seconds reached."""
     start_time = time.time()
     last_res = get_command_result(job_id)
-    
+
     while time.time() - start_time < max_wait_seconds:
         if not last_res:
             break
@@ -72,5 +72,5 @@ def wait_for_command(job_id: str, max_wait_seconds: int = 10, poll_interval: flo
             return last_res
         time.sleep(poll_interval)
         last_res = get_command_result(job_id)
-        
+
     return last_res or {"id": job_id, "status": "unknown", "output": "Failed to retrieve status"}
