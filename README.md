@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/Protocol-Model_Context_Protocol-green.svg)](https://modelcontextprotocol.io/)
-[![Release](https://img.shields.io/badge/release-nexus--v2.5--final--20260806-success.svg)](FINAL_ACCEPTANCE_REPORT.md)
+[![Release](https://img.shields.io/badge/release-nexus--v2.5--final--20260806-success.svg)](docs/FINAL_ACCEPTANCE_REPORT.md)
 
 **Nexus** 是面向个人异构基础设施的跨端分布式智能控制平面。它让 ChatGPT、MCP 客户端和受控自动化程序，以明确目标、区域就近、幂等执行和真实回执的方式，统一控制 Linux、Windows、WSL、HPC 与 OpenWrt 节点。
 
@@ -128,7 +128,7 @@ Browser Adapter 提供：
 - 硬超时和明确失败类型；
 - 不绕过 CAPTCHA、Cloudflare 真人验证或 MFA。
 
-完整双轮交叉评审证据位于 `artifacts/acceptance/nexus-final-review/`。
+完整双轮交叉评审证据位于 `docs/evidence/acceptance/nexus-final-review/`。
 
 ---
 
@@ -213,17 +213,38 @@ Victus Windows 整机重启演练保留到明确维护窗口执行，不被描�
 
 ## 文档索引
 
-- [最终结项与验收报告](FINAL_ACCEPTANCE_REPORT.md)
-- [恢复运行手册](RECOVERY_RUNBOOK.md)
-- [安全基线](SECURITY.md)
+- [最终结项与验收报告](docs/FINAL_ACCEPTANCE_REPORT.md)
+- [恢复运行手册](docs/RECOVERY_RUNBOOK.md)
+- [安全基线](docs/SECURITY.md)
 - [Nexus 系统提示词](nexus_system_prompt.md)
 - [.ai 九大文档体系](.ai/README.md)
 - [.ai 完整结项报告](.ai/结项报告-2026-08-06.md)
 - [Browser Adapter](browser-bridge/nexus_browser_adapter.py)
-- [验收证据](artifacts/acceptance/)
+- [验收证据](docs/evidence/acceptance/)
 
 ---
 
 ## License
 
 本项目基于 [MIT License](LICENSE) 发布。
+
+## 🗂️ 项目结构
+
+```text
+Nexus/
+├── README.md                 # 项目入口与生产架构
+├── nexus_system_prompt.md    # 生产提示词 + 内嵌 OpenAPI 3.1
+├── nexus.json                # 项目配置
+├── install.sh / install.ps1  # 一键安装
+├── agent-council/            # 多顾问编排
+├── browser-bridge/           # Claude/Gemini 浏览器适配器
+├── mcp_server/               # MCP 服务端
+├── deploy/                   # 部署脚本与 schema
+├── check/                    # 诊断脚本
+├── utils/                    # 非产品入口运维工具
+├── tests/                    # 测试
+├── docs/                     # 架构、安全、恢复和验收文档
+└── .ai/                      # 九大持续上下文文档体系
+```
+
+运行产物、浏览器缓存和本地备份不属于源码，由 `.gitignore` 管理。

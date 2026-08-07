@@ -82,7 +82,7 @@
 
 å½“å‰ `~/aurora/Workstation/Nexus/` ç›®å½•å½’æ¡£æ–‡ä»¶ï¼š
 
-1. `NEXUS_ARCHITECTURE_DESIGN.md`ï¼šæœ¬æž¶æž„è®¾è®¡ä¸Žæ–¹æ¡ˆå¯¹æ¯”æ–‡æ¡£ã€‚
+1. `docs/ARCHITECTURE.md`ï¼šæœ¬æž¶æž„è®¾è®¡ä¸Žæ–¹æ¡ˆå¯¹æ¯”æ–‡æ¡£ã€‚
 2. `install.sh`ï¼šå…¨èŠ‚ç‚¹é€šç”¨ä¸€é”® GitHub / HTTP éƒ¨ç½²è„šæœ¬ã€‚
 3. `dc_agent.py`ï¼šå¤šçº¿ç¨‹ Python Agentï¼ˆæ”¯æŒ 10 å¹¶å‘ä¸Ž `ilike` æ¨¡ç³Šè·¯ç”±ï¼‰ã€‚
 4. `run_win_agent.py`ï¼šWindows åŽŸç”Ÿ Agentï¼ˆPowerShell æ”¯æŒä¸Ž 0x800700e8 ç®¡é“é˜²å´©æºƒé‡å®šå‘ï¼‰ã€‚

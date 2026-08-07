@@ -109,3 +109,356 @@ Supabase 仅保存设备目录、心跳、审计与异步镜像，不是正常�
 ## 最终原则
 
 **明确目标，直接下发；目标不变，路径可变；区域就近，幂等执行；真实回执，救援有界；最小变更，凭据不外泄。**
+
+## Appendix A. OpenAPI 3.1 规范（内嵌单一事实源）
+
+该规范供 Custom GPT Actions、兼容客户端和部署工具使用。修改 API 时只更新本附录。
+
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nexus Regional Control API",
+    "description": "Nexus v2.5 双区域集群控制 API。调用方只使用统一 Global API，并显式指定目标设备；API 自动选择 Oracle EU 或 ThinkCenter CN Broker，不会改变目标设备。",
+    "version": "2.5.0-regional"
+  },
+  "servers": [
+    {
+      "url": "https://nexus-api.bings.app",
+      "description": "Oracle 主入口；故障时同域名自动切换 ThinkCenter 灾备入口"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getNexusHealth",
+        "summary": "检查 Nexus Global API 健康状态",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Global API 位置、版本与区域 Broker 映射"
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "operationId": "listNexusDevices",
+        "summary": "列出规范设备及最新心跳",
+        "responses": {
+          "200": {
+            "description": "设备数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Device"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/execute": {
+      "post": {
+        "operationId": "executeNexusCommand",
+        "summary": "向一个明确目标设备直接下发命令",
+        "description": "必须使用规范 device ID。区域故障转移只改变 Broker 路径，不会把任务改派其他设备。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "任务当前或最终回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "区域 Broker 暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/execute-batch": {
+      "post": {
+        "operationId": "executeNexusBatch",
+        "summary": "并发执行多个独立目标任务",
+        "description": "每个数组元素创建独立 job；不要提交共享 broadcast job。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "按输入顺序返回的任务结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/JobResult"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "operationId": "getNexusJob",
+        "summary": "查询任务最终状态",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "两个区域 Broker 均未找到该任务"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Nexus API token"
+      }
+    },
+    "schemas": {
+      "ExecuteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "device",
+          "command"
+        ],
+        "properties": {
+          "device": {
+            "type": "string",
+            "description": "规范设备 ID",
+            "enum": [
+              "thinkcenter",
+              "n1",
+              "oracle",
+              "vsc",
+              "victus",
+              "elitebook"
+            ]
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "目标平台原生命令：Linux Bash、Victus PowerShell、VSC Bash/Slurm、N1 POSIX ash"
+          },
+          "wait_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "default": 10,
+            "description": "同步等待秒数；超时后使用 job_id 查询，不代表任务失败"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 3600000,
+            "default": 30000,
+            "description": "目标命令执行超时"
+          }
+        }
+      },
+      "BatchRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "jobs"
+        ],
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/ExecuteRequest"
+            }
+          },
+          "wait_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "default": 10
+          }
+        }
+      },
+      "Device": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_seen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "JobResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target_device": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "claimed",
+              "running",
+              "completed",
+              "failed",
+              "timeout",
+              "expired",
+              "cancelled",
+              "unknown"
+            ]
+          },
+          "output": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "broker_region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "eu",
+              "cn",
+              null
+            ]
+          },
+          "lease_owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "_nexus_timing": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "请求缺少目标设备或命令，或参数超出范围"
+      },
+      "Unauthorized": {
+        "description": "缺少或使用无效 Nexus Bearer Token"
+      }
+    }
+  }
+}
+```

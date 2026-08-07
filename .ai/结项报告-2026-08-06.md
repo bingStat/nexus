@@ -25,12 +25,12 @@ ChatGPT 通过 Nexus 对已授权节点实施直接、可审计、幂等控制�
 - 双轮讨论 Round 1 job：`3f1636b8-d855-42af-864e-2a54dab99a7a`，`completed/0`。
 - 双轮讨论 Round 2 job：`f536231e-dece-44cf-8335-02e7cce93636`，`completed/0`。
 - 最终测试 job：`e3278fd3-ea8c-47b4-969d-56636727c073`，`completed/0`。
-- 四轮讨论 manifest：`artifacts/acceptance/nexus-final-review/manifest.json`，`all_completed=true`。
-- 单元测试：33/33 通过；记录见 `artifacts/acceptance/unit-tests.txt`。
-- Secret scan：通过；记录见 `artifacts/acceptance/secret-scan.txt`。
+- 四轮讨论 manifest：`docs/evidence/acceptance/nexus-final-review/manifest.json`，`all_completed=true`。
+- 单元测试：33/33 通过；记录见 `docs/evidence/acceptance/unit-tests.txt`。
+- Secret scan：通过；记录见 `docs/evidence/acceptance/secret-scan.txt`。
 
 ## 5. 讨论室
-讨论室 `nexus-final-review` 包含 Gemini Round 1、Claude Round 1、Claude 交叉审核和 Gemini 交叉审核。完整内容位于 `artifacts/acceptance/nexus-final-review/`，包括 JSON 回执、append-only transcript、提示和 manifest。
+讨论室 `nexus-final-review` 包含 Gemini Round 1、Claude Round 1、Claude 交叉审核和 Gemini 交叉审核。完整内容位于 `docs/evidence/acceptance/nexus-final-review/`，包括 JSON 回执、append-only transcript、提示和 manifest。
 
 ## 6. 安全结论
 Token 未写入仓库或 transcript；Bridge secret 保持在 F 盘本地受控位置；正常路径不使用 SSH 绕路；救援通道保留但不进入生产依赖；Herdr 不参与运行时。

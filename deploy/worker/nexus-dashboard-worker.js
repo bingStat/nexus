@@ -1,5 +1,5 @@
 // Nexus Dashboard Worker — serves R2 static HTML for nexus.bings.app
-// Also serves nexus_system_prompt.md and nexus_openapi.json from R2
+// Serves README and the production prompt; OpenAPI is embedded in the prompt appendix
 
 export default {
   async fetch(request, env) {
@@ -32,9 +32,8 @@ export default {
     } else if (path === '/nexus_system_prompt.md') {
       r2Key = 'nexus_system_prompt.md';
       contentType = 'text/markdown; charset=utf-8';
-    } else if (path === '/nexus_openapi.json' || path === '/openapi.json') {
-      r2Key = 'nexus_openapi.json';
-      contentType = 'application/json; charset=utf-8';
+    } else if (path === '/openapi.json') {
+      return new Response('OpenAPI is embedded in /nexus_system_prompt.md, Appendix A', { status: 410 });
     } else if (path === '/readme' || path === '/README.md') {
       r2Key = 'README.md';
       contentType = 'text/markdown; charset=utf-8';

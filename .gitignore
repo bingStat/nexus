@@ -6,3 +6,6 @@ __pycache__/
 .wrangler/
 audit.json
 zone_audit.json
+.playwright-mcp/
+backups/
+artifacts/
