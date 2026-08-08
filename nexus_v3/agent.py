@@ -21,7 +21,7 @@ def config_path() -> Path:
 
 
 def load_config() -> dict:
-    with config_path().open("r", encoding="utf-8") as fh:
+    with config_path().open("r", encoding="utf-8-sig") as fh:
         return json.load(fh)
 
 
