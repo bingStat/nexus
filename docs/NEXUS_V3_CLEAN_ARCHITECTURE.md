@@ -8,7 +8,7 @@
 |---|---|---:|---|---|
 | Registry | Oracle | `127.0.0.1:18101` | `https://nexus-global-api.bings.app/v3` | `/var/lib/nexus-v3/registry.db` |
 | EU Broker | Oracle | `127.0.0.1:18102` | `https://nexus-global-api.bings.app/v3/eu-broker`（可选） | `/var/lib/nexus-v3/eu-broker.db` |
-| CN Broker | ThinkCenter | `127.0.0.1:18100` | `https://nexus-broker.bings.app/v3` | `/var/lib/nexus-v3/broker.db` |
+| CN Broker | ThinkCenter | `127.0.0.1:18120` | `https://nexus-broker.bings.app/v3` 或 LAN `http://100.103.12.14:18120/v3` | `/var/lib/nexus-v3/broker.db` |
 | Linux Agent | 每台 Linux 机器 | systemd `nexus-v3-agent.service` | outbound only | `/etc/nexus-agent/v3.json` |
 | OpenWrt Agent | N1/iStoreOS | procd `nexus-v3-agent` | outbound only | `/etc/nexus-agent/v3.env` |
 

@@ -17,7 +17,7 @@ fail() { printf 'nexus v3 install: %s\n' "$*" >&2; exit 1; }
 [ -n "$DEVICE_ID" ] || fail "device id required: install-v3.sh <canonical-device-id>"
 
 case "$DEVICE_ID" in
-  thinkcenter) BROKER_URL="${BROKER_URL:-http://127.0.0.1:18100}" ;;
+  thinkcenter) BROKER_URL="${BROKER_URL:-http://127.0.0.1:18120}" ;;
   oracle|oracle-amd) BROKER_URL="${BROKER_URL:-http://127.0.0.1:18102}" ;;
   *) BROKER_URL="${BROKER_URL:-https://nexus-broker.bings.app}" ;;
 esac
