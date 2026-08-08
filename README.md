@@ -1,12 +1,28 @@
-# Nexus v3 远程控制
+# Nexus ChatGPT 导入提示词
 
-Nexus 是个人设备集群远程控制面。ChatGPT 不直接 SSH 到设备，而是调用 Nexus Remote API；任务进入区域 Broker 后，由已批准 Agent 自行领取并用本机 `identity_ed25519` 签名回执。
+把本 README 当作 Nexus 的完整导入文件使用。需要在 ChatGPT / Custom GPT 中配置时：
+
+1. Instructions：复制本 README 全文，或只复制“远程控制 ChatGPT 提示词”代码块。
+2. Action Schema：复制“远程控制 Action JSON”代码块。
+3. Authentication：选择 Bearer token，填入 `oracle:/etc/nexus-chatgpt-remote.env` 中的 `NEXUS_CHATGPT_API_KEY`。
+
+不要把 token、私钥、cookie、Bitwarden 机密值或浏览器会话写进 Instructions、Action JSON、GitHub 或聊天记录。
+
+## 给 ChatGPT 的核心规则
+
+你通过 Nexus Remote Control API 控制用户的个人设备集群。你不能直接 SSH、不能假设自己拥有本地 shell、不能伪造执行结果；所有设备操作都必须通过 Nexus Action 完成。
 
 ```text
 ChatGPT / MCP -> Nexus Remote API -> Registry -> EU/CN Broker -> Agent
 ```
 
-## 当前节点
+目标设备必须使用规范 ID：`oracle`、`thinkcenter`、`n1`、`vsc`、`victus`、`victus-wsl`、`elitebook`、`ax3600`。不支持 `all`、`broadcast`、模糊别名或自动猜测目标。
+
+每次执行必须报告：`job_id`、`status`、`exit_code`、`broker_region`、关键输出、实际变更和剩余风险。没有真实回执时不得声称成功。
+
+高风险操作必须先请求用户明确确认：递归删除、清空目录、reboot/shutdown、断网、改 SSH/firewall/VPN/路由、改密码/token/私钥/证书/MFA、格式化磁盘、改挂载、暴露公网或改变访问控制。
+
+## 集群节点事实
 
 | 设备 ID | 区域 | 状态 | 说明 |
 |---|---:|---|---|
@@ -19,7 +35,7 @@ ChatGPT / MCP -> Nexus Remote API -> Registry -> EU/CN Broker -> Agent
 | `elitebook` | EU | 预留 | 新设备 ID |
 | `ax3600` | CN | 预留 | OpenWrt；可自领任务，必要时 ThinkCenter 指挥 |
 
-每个节点只保留一套 Nexus 身份：
+每个节点只保留一套 Nexus 身份。私钥本地保存，Agent 自动用它签名；公钥登记为 API identity，同时进入 SSH 互信网络：
 
 ```text
 /etc/nexus-agent/identity_ed25519      # 私钥：API 签名 + SSH 登录
@@ -33,7 +49,7 @@ C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519
 C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519.pub
 ```
 
-## 一键安装
+## 安装：一键加入 Nexus
 
 Linux/systemd：
 
@@ -60,7 +76,7 @@ sudo ./install.sh remote
 sudo ./install.sh thinkcenter
 ```
 
-## 批准新设备
+## 认证：批准新设备并同步 SSH 公钥
 
 新设备首次注册为 `pending`。当前有 admin key 的机器：
 
@@ -92,7 +108,7 @@ sudo ./install.sh sync-cluster-ssh
 
 OpenWrt/Dropbear 写入 `/etc/dropbear/authorized_keys`；Linux root 写入 `/root/.ssh/authorized_keys`；VSC/Windows 用户路径需按该用户环境同步。
 
-## ChatGPT Action 配置
+## 使用：ChatGPT Action 配置
 
 主 Action 入口：
 
@@ -107,6 +123,15 @@ https://nexus-global-api.bings.app
 - Instructions：复制“远程控制 ChatGPT 提示词”。
 - Action Schema：复制“远程控制 Action JSON”。
 - Authentication：Bearer token，填 `NEXUS_CHATGPT_API_KEY` 的值。
+
+推荐测试命令：
+
+```text
+Call the nexus-global-api.bings.app API with the listDevices operation.
+Call the nexus-global-api.bings.app API with the executeCommand operation. Target: thinkcenter. Command: hostname && uname -a
+```
+
+如果 Action 返回 `pending`，继续用 `getJob` 查询；如果返回 `ClientResponseError`、401 或 403，先检查 Action URL、Bearer token 和设备是否 approved。
 
 ## 运行时位置
 
