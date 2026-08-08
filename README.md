@@ -19,6 +19,7 @@
 - **幂等执行**：每个任务包含 UUID、idempotency key、lease、attempt，并由本地 execution ledger 防止重复执行。
 - **救援有界**：SSH、Victus WSL、Desktop Commander 和云控制台只在目标 Agent 失效时使用，并明确标注为救援路径。
 - **凭据不外泄**：Token、密码、Cookie、私钥和浏览器会话数据不进入聊天、日志、Git 或 transcript。
+- **设备身份签名**：Agent 鉴权升级为每设备 Nexus 专用 Ed25519 keypair；Global API 保存公钥和批准状态，Broker 验签，不再让 Agent 保存 API token。
 
 ---
 
@@ -216,6 +217,7 @@ Victus Windows 整机重启演练保留到明确维护窗口执行，不被描�
 - [最终结项与验收报告](docs/FINAL_ACCEPTANCE_REPORT.md)
 - [恢复运行手册](docs/RECOVERY_RUNBOOK.md)
 - [安全基线](docs/SECURITY.md)
+- [设备身份签名鉴权](docs/DEVICE_IDENTITY_AUTH.md)
 - [Nexus 系统提示词](nexus_system_prompt.md)
 - [.ai 九大文档体系](.ai/README.md)
 - [.ai 完整结项报告](.ai/结项报告-2026-08-06.md)

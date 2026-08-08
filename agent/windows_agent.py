@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import signal
 import socket
@@ -12,17 +14,24 @@ import sys
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-AGENT_VERSION = "2.5.0"
+AGENT_VERSION = "2.6.0"
 TERMINAL = {"completed", "failed", "timeout", "expired", "cancelled"}
 UTC = timezone.utc
+SIGNATURE_VERSION = "NEXUS-ED25519-V1"
+REGISTRATION_VERSION = "NEXUS-REGISTER-V1"
 
 
 def iso_now() -> str:
@@ -55,6 +64,157 @@ def _unique_urls(values: list[Any]) -> list[str]:
     return result
 
 
+def default_identity_private_key_path() -> Path:
+    if os.name == "nt":
+        base = Path(os.getenv("ProgramData", r"C:\ProgramData")) / "NexusAgent"
+        return base / "identity_ed25519"
+    return Path("/etc/nexus-agent/identity_ed25519")
+
+
+@dataclass(frozen=True)
+class DeviceIdentity:
+    private_key_path: Path
+    public_key_path: Path
+    private_key: Ed25519PrivateKey
+    public_key_pem: str
+    key_id: str
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _unb64url(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def _public_key_id(public_key: Ed25519PublicKey) -> str:
+    der = public_key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(der)
+    return "sha256:" + digest.finalize().hex()
+
+
+def _private_key_permissions(path: Path) -> None:
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+        os.chmod(path.parent, 0o700)
+
+
+def ensure_identity_keypair(private_key_path: Path, public_key_path: Path | None = None) -> DeviceIdentity:
+    public_key_path = public_key_path or private_key_path.with_name(private_key_path.name + ".pub")
+    private_key_path.parent.mkdir(parents=True, exist_ok=True)
+    if not private_key_path.exists():
+        private_key = Ed25519PrivateKey.generate()
+        private_pem = private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        private_key_path.write_bytes(private_pem)
+        _private_key_permissions(private_key_path)
+    else:
+        private_key = serialization.load_pem_private_key(private_key_path.read_bytes(), password=None)
+        if not isinstance(private_key, Ed25519PrivateKey):
+            raise RuntimeError(f"Nexus identity key is not Ed25519: {private_key_path}")
+        _private_key_permissions(private_key_path)
+    public_key = private_key.public_key()
+    public_pem = public_key.public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("ascii")
+    if not public_key_path.exists() or public_key_path.read_text(encoding="utf-8", errors="replace") != public_pem:
+        public_key_path.write_text(public_pem, encoding="utf-8")
+        if os.name != "nt":
+            os.chmod(public_key_path, 0o644)
+    return DeviceIdentity(
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+        private_key=private_key,
+        public_key_pem=public_pem,
+        key_id=_public_key_id(public_key),
+    )
+
+
+def _body_sha256_hex(body: bytes | str | None) -> str:
+    if body is None:
+        body_bytes = b""
+    elif isinstance(body, bytes):
+        body_bytes = body
+    else:
+        body_bytes = body.encode("utf-8")
+    return hashlib.sha256(body_bytes).hexdigest()
+
+
+def canonical_signature_message(method: str, path_and_query: str, timestamp: str, nonce: str, device_id: str, body: bytes | str | None) -> bytes:
+    value = "\n".join([
+        SIGNATURE_VERSION,
+        method.upper(),
+        path_and_query or "/",
+        timestamp,
+        nonce,
+        device_id,
+        _body_sha256_hex(body),
+    ])
+    return value.encode("utf-8")
+
+
+def build_signed_headers(
+    *,
+    identity: DeviceIdentity,
+    device_id: str,
+    method: str,
+    path_and_query: str,
+    body: bytes | str | None,
+    timestamp: str | None = None,
+    nonce: str | None = None,
+) -> dict[str, str]:
+    timestamp = timestamp or iso_now().replace("+00:00", "Z")
+    nonce = nonce or _b64url(secrets.token_bytes(16))
+    signature = identity.private_key.sign(canonical_signature_message(method, path_and_query, timestamp, nonce, device_id, body))
+    return {
+        "X-Nexus-Device": device_id,
+        "X-Nexus-Key-Id": identity.key_id,
+        "X-Nexus-Timestamp": timestamp,
+        "X-Nexus-Nonce": nonce,
+        "X-Nexus-Signature": _b64url(signature),
+    }
+
+
+def verify_signed_headers_for_test(public_key_pem: str, headers: dict[str, str], method: str, path_and_query: str, body: bytes | str | None) -> bool:
+    public_key = serialization.load_pem_public_key(public_key_pem.encode("ascii"))
+    if not isinstance(public_key, Ed25519PublicKey):
+        return False
+    try:
+        public_key.verify(
+            _unb64url(headers["X-Nexus-Signature"]),
+            canonical_signature_message(method, path_and_query, headers["X-Nexus-Timestamp"], headers["X-Nexus-Nonce"], headers["X-Nexus-Device"], body),
+        )
+        return True
+    except (InvalidSignature, KeyError, ValueError):
+        return False
+
+
+def path_and_query(url: str) -> str:
+    parsed = urlsplit(url)
+    return parsed.path + (f"?{parsed.query}" if parsed.query else "") or "/"
+
+
+def registration_payload(config: dict[str, Any], identity: DeviceIdentity) -> dict[str, Any]:
+    payload = {
+        "device_id": config["device_id"],
+        "public_key_ed25519": identity.public_key_pem,
+        "key_id": identity.key_id,
+        "hostname": socket.gethostname(),
+        "platform": "windows" if os.name == "nt" else "posix",
+        "agent_version": AGENT_VERSION,
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload["proof"] = _b64url(identity.private_key.sign((REGISTRATION_VERSION + "\n").encode("utf-8") + hashlib.sha256(canonical).hexdigest().encode("ascii")))
+    return payload
+
+
 def load_config() -> dict[str, Any]:
     path = Path(os.getenv("NEXUS_CONFIG_FILE", Path.home() / ".nexus-agent" / "config.json"))
     data: dict[str, Any] = {}
@@ -75,9 +235,10 @@ def load_config() -> dict[str, Any]:
     ])
     return {
         "api_url": os.getenv("NEXUS_API_URL") or data.get("api_url"),
-        "api_token": os.getenv("NEXUS_API_TOKEN") or os.getenv("NEXUS_API_KEY") or data.get("api_token"),
         "device_id": os.getenv("NEXUS_DEVICE_ID") or os.getenv("DEVICE_ID") or data.get("device_id") or socket.gethostname().lower(),
         "device_name": os.getenv("NEXUS_DEVICE_NAME") or os.getenv("DEVICE_NAME") or data.get("device_name") or socket.gethostname(),
+        "identity_key_path": os.getenv("NEXUS_IDENTITY_KEY") or data.get("identity_key_path") or str(default_identity_private_key_path()),
+        "identity_public_key_path": os.getenv("NEXUS_IDENTITY_PUBLIC_KEY") or data.get("identity_public_key_path"),
         "aliases": aliases,
         "poll_seconds": max(0.10, float(os.getenv("NEXUS_POLL_SECONDS", data.get("poll_seconds", 0.25)))),
         "heartbeat_seconds": max(10.0, float(os.getenv("NEXUS_HEARTBEAT_SECONDS", data.get("heartbeat_seconds", 30)))),
@@ -178,7 +339,10 @@ class ExecutionLedger:
 class NexusAPI:
     def __init__(self, config: dict[str, Any]) -> None:
         self.base_url = str(config.get("api_url") or "").rstrip("/")
-        self.token = str(config.get("api_token") or "")
+        private_key_path = Path(str(config["identity_key_path"]))
+        public_key_path = Path(str(config.get("identity_public_key_path") or private_key_path.with_name(private_key_path.name + ".pub")))
+        self.identity = ensure_identity_keypair(private_key_path, public_key_path)
+        self.device_id = str(config["device_id"])
         self.timeout = float(config["request_timeout"])
         self.broker_urls = list(config.get("broker_urls") or [])
         self.broker_index = 0
@@ -188,8 +352,8 @@ class NexusAPI:
         self.last_primary_probe = 0.0
         self.local = threading.local()
         self.pool_lock = threading.Lock()
-        if not self.base_url or not self.token:
-            raise RuntimeError("NEXUS_API_URL and NEXUS_API_TOKEN are required")
+        if not self.base_url:
+            raise RuntimeError("NEXUS_API_URL is required")
 
     def session(self) -> requests.Session:
         session = getattr(self.local, "session", None)
@@ -200,28 +364,54 @@ class NexusAPI:
             session.mount("https://", adapter)
             session.mount("http://", adapter)
             session.headers.update({
-                "Authorization": f"Bearer {self.token}",
-                "apikey": self.token,
                 "Content-Type": "application/json",
                 "Connection": "keep-alive",
             })
             self.local.session = session
         return session
 
-    def request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
-        response = self.session().request(method, f"{self.base_url}/{path.lstrip('/')}", timeout=kwargs.pop("timeout", self.timeout), **kwargs)
+    def send_signed(self, method: str, url: str, **kwargs: Any) -> requests.Response:
+        timeout = kwargs.pop("timeout", self.timeout)
+        headers = dict(kwargs.pop("headers", {}) or {})
+        params = kwargs.pop("params", None)
+        json_payload = kwargs.pop("json", None)
+        data = kwargs.pop("data", None)
+        request = requests.Request(method, url, params=params, headers=headers, json=json_payload, data=data)
+        prepared = self.session().prepare_request(request)
+        body = prepared.body or b""
+        if isinstance(body, str):
+            body_bytes = body.encode("utf-8")
+        else:
+            body_bytes = body
+        prepared.headers.update(build_signed_headers(
+            identity=self.identity,
+            device_id=self.device_id,
+            method=method,
+            path_and_query=path_and_query(prepared.url or url),
+            body=body_bytes,
+        ))
+        response = self.session().send(prepared, timeout=timeout, **kwargs)
         response.raise_for_status()
         return response
 
+    def register_identity(self, config: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_url}/api/device-identities/register"
+        payload = registration_payload(config, self.identity)
+        response = self.session().post(url, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        data = response.json() if response.content else {}
+        log("identity.registered", status=data.get("status"), key_id=self.identity.key_id, public_key_path=str(self.identity.public_key_path))
+        return data
+
+    def request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+        return self.send_signed(method, f"{self.base_url}/{path.lstrip('/')}", **kwargs)
+
     def broker_request(self, broker_url: str, method: str, path: str, **kwargs: Any) -> requests.Response:
-        response = self.session().request(
+        return self.send_signed(
             method,
             f"{broker_url.rstrip('/')}/{path.lstrip('/')}",
-            timeout=kwargs.pop("timeout", self.timeout),
             **kwargs,
         )
-        response.raise_for_status()
-        return response
 
     @staticmethod
     def aliases(config: dict[str, Any]) -> list[str]:
@@ -330,14 +520,14 @@ class NexusAPI:
         headers = {**self.session().headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
         if getattr(self, "expanded_devices", None) is not False:
             try:
-                self.request("POST", "devices", json=payload, headers=headers)
+                self.request("POST", "api/devices/heartbeat", json=payload, headers=headers)
                 self.expanded_devices = True
                 return
             except requests.HTTPError as exc:
                 if exc.response is None or exc.response.status_code not in {400, 404}:
                     raise
                 self.expanded_devices = False
-        self.request("POST", "devices", json={
+        self.request("POST", "api/devices/heartbeat", json={
             "device_id": config["device_id"], "name": config["device_name"],
             "status": "online", "last_seen": payload["last_seen"],
         }, headers=headers)
@@ -500,6 +690,7 @@ def main() -> None:
         raise RuntimeError("Exactly one regional broker URL is required")
     _instance_lock = acquire_single_instance_lock(config["lock_port"])
     api = NexusAPI(config)
+    api.register_identity(config)
     ledger = ExecutionLedger(config["ledger_path"])
     executor = ThreadPoolExecutor(max_workers=config["max_workers"], thread_name_prefix="nexus-worker")
     in_flight: set[Future[Any]] = set()
@@ -530,6 +721,7 @@ def main() -> None:
         "agent.started", version=AGENT_VERSION, device_id=config["device_id"],
         broker_urls=config["broker_urls"], poll_seconds=config["poll_seconds"],
         heartbeat_seconds=config["heartbeat_seconds"], ledger_path=config["ledger_path"],
+        key_id=api.identity.key_id, public_key_path=str(api.identity.public_key_path),
     )
     while True:
         try:
