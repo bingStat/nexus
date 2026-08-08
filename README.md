@@ -77,24 +77,17 @@ sh install.sh ax3600
 
 ## 新设备加入集群
 
-任意新设备加入 Nexus 时，只需要运行同一个安装脚本。安装器会自动完成四件事：
+任意新设备加入 Nexus 时，只需要运行同一个安装脚本。安装器会自动完成：
 
-1. 生成 Nexus API Ed25519 身份：
+1. 生成两组 Ed25519 key。API key 用来给 Agent 请求签名；SSH key 用来加入机器互信网络。
 
-   ```text
-   /etc/nexus-agent/identity_ed25519
-   /etc/nexus-agent/identity_ed25519.pub
-   ```
+   | 用途 | 私钥 | 公钥 |
+   |---|---|---|
+   | Agent 请求签名 | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` |
+   | 节点互相 SSH | `/etc/nexus-agent/ssh_ed25519` | `/etc/nexus-agent/ssh_ed25519.pub` |
 
-2. 生成 Nexus 专用 SSH 身份：
-
-   ```text
-   /etc/nexus-agent/ssh_ed25519
-   /etc/nexus-agent/ssh_ed25519.pub
-   ```
-
-3. 把 `device_id + API public_key + SSH public_key + hostname + platform` 注册到 Registry。
-4. 设备被批准后，从 Registry 拉取所有 approved 设备的 SSH 公钥，并同步到各终端 `authorized_keys` 的 Nexus 管理区块。
+2. 把 `device_id + API public_key + SSH public_key + hostname + platform` 注册到 Registry。
+3. 设备被批准后，从 Registry 拉取所有 approved 设备的 SSH 公钥，并同步到各终端 `authorized_keys` 的 Nexus 管理区块。
 
 Linux/systemd 新设备：
 
