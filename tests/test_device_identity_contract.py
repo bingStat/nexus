@@ -71,6 +71,8 @@ class DeviceIdentityContractTests(unittest.TestCase):
         self.assertIn("NEXUS_ED25519_SIGNER", installer)
         self.assertIn("ruby \"$ED25519_SIGNER\" sign", agent)
         self.assertIn("ruby \"$ED25519_SIGNER\" key-id", agent)
+        self.assertNotIn('cat > "$payload_base" <<EOF', agent)
+        self.assertIn("printf '{\"agent_version\"", agent)
 
 
 if __name__ == "__main__":

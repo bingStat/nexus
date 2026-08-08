@@ -145,9 +145,8 @@ register_identity() {
   payload="$RUN_DIR/register.json"
   proof_msg="$RUN_DIR/register-proof-message"
   proof_sig="$RUN_DIR/register-proof-signature.bin"
-  cat > "$payload_base" <<EOF
-{"agent_version":"$AGENT_VERSION","device_id":"$DEVICE_ID","hostname":"$HOSTNAME_VALUE","key_id":"$(key_id)","platform":"openwrt","public_key_ed25519":"$public_key_json"}
-EOF
+  printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s"}' \
+    "$AGENT_VERSION" "$DEVICE_ID" "$HOSTNAME_VALUE" "$(key_id)" "$public_key_json" > "$payload_base"
   {
     printf 'NEXUS-REGISTER-V1\n'
     sha256_file "$payload_base" | tr -d '\n'
