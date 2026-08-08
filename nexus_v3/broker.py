@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,7 +15,7 @@ from urllib.request import urlopen
 
 from .common import json_dumps, read_json, utc_now, verify_http_signature
 
-VERSION = "3.0.0"
+VERSION = "3.0.1"
 
 
 class BrokerStore:
@@ -115,6 +116,24 @@ class BrokerStore:
             return dict(row)
 
 
+class ReplayGuard:
+    def __init__(self, ttl_seconds: int = 600):
+        self.ttl_seconds = ttl_seconds
+        self._seen: dict[tuple[str, str], float] = {}
+        self._lock = threading.Lock()
+
+    def accept(self, device_id: str, nonce: str) -> None:
+        now = time.time()
+        key = (device_id, nonce)
+        with self._lock:
+            expired = [item for item, seen_at in self._seen.items() if now - seen_at > self.ttl_seconds]
+            for item in expired:
+                self._seen.pop(item, None)
+            if key in self._seen:
+                raise PermissionError("signature nonce already used")
+            self._seen[key] = now
+
+
 def admin_ok(handler: BaseHTTPRequestHandler) -> bool:
     expected = os.getenv("NEXUS_V3_ADMIN_KEY", "")
     return not expected or handler.headers.get("X-Nexus-Admin-Key") == expected
@@ -128,6 +147,7 @@ def fetch_public_key(device_id: str) -> str:
 
 class Handler(BaseHTTPRequestHandler):
     store: BrokerStore
+    replay_guard = ReplayGuard()
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(json_dumps({"ts": utc_now(), "service": "broker", "remote": self.client_address[0], "msg": fmt % args}), flush=True)
@@ -143,9 +163,12 @@ class Handler(BaseHTTPRequestHandler):
     def signed_device(self, body: bytes) -> str:
         parsed = urlparse(self.path)
         path_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
-        device_id = str(self.headers.get("X-Nexus-Device") or "").strip().lower()
+        headers = {key: value for key, value in self.headers.items()}
+        device_id = str(headers.get("X-Nexus-Device") or "").strip().lower()
         public_key = fetch_public_key(device_id)
-        return verify_http_signature(public_key, dict(self.headers), self.command, path_query, body)
+        verified_device = verify_http_signature(public_key, headers, self.command, path_query, body)
+        self.replay_guard.accept(verified_device, str(headers.get("X-Nexus-Nonce") or ""))
+        return verified_device
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -177,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": str(exc)})
         except KeyError:
             self.send_json(404, {"error": "not_found"})
+        except Exception as exc:
+            self.send_json(502, {"error": f"broker dependency failed: {str(exc)[:200]}"})
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -196,6 +221,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": str(exc)})
         except KeyError:
             self.send_json(404, {"error": "not_found"})
+        except Exception as exc:
+            self.send_json(502, {"error": f"broker dependency failed: {str(exc)[:200]}"})
 
 
 def main() -> None:
