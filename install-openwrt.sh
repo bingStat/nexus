@@ -38,7 +38,9 @@ chmod 700 "$CONFIG_DIR"
 [ -f /etc/init.d/nexus-agent ] && cp /etc/init.d/nexus-agent "$BACKUP_DIR/nexus-agent.init.bak"
 
 curl -fsSL "$SOURCE_BASE/openwrt_agent.sh" -o "$INSTALL_DIR/agent.sh"
+curl -fsSL "$SOURCE_BASE/openwrt_ed25519_signer.rb" -o "$INSTALL_DIR/openwrt_ed25519_signer.rb"
 chmod 755 "$INSTALL_DIR/agent.sh"
+chmod 755 "$INSTALL_DIR/openwrt_ed25519_signer.rb"
 
 {
   printf 'NEXUS_DEVICE_ID=%s\n' "$(quote "$DEVICE_ID")"
@@ -47,6 +49,7 @@ chmod 755 "$INSTALL_DIR/agent.sh"
   printf 'NEXUS_API_URL=%s\n' "$(quote "$(printf '%s' "$API_URL" | sed 's:/*$::')")"
   printf 'NEXUS_IDENTITY_KEY=%s\n' "$(quote "$IDENTITY_KEY")"
   printf 'NEXUS_IDENTITY_PUBLIC_KEY=%s\n' "$(quote "$IDENTITY_PUB")"
+  printf 'NEXUS_ED25519_SIGNER=%s\n' "$(quote "$INSTALL_DIR/openwrt_ed25519_signer.rb")"
   printf 'NEXUS_POLL_SECONDS=%s\n' "$(quote "${NEXUS_POLL_SECONDS:-1}")"
   printf 'NEXUS_HEARTBEAT_SECONDS=%s\n' "$(quote "${NEXUS_HEARTBEAT_SECONDS:-30}")"
   printf 'NEXUS_BROKER_WAIT_SECONDS=%s\n' "$(quote "${NEXUS_BROKER_WAIT_SECONDS:-20}")"

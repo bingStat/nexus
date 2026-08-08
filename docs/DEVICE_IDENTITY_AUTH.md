@@ -7,10 +7,12 @@
 | 平台 | 私钥 | 公钥 | 配置 |
 |---|---|---|---|
 | Linux/systemd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/config.json` |
-| OpenWrt/procd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/config.env` |
+| OpenWrt/procd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/config.env`；签名辅助脚本 `/opt/nexus-agent/openwrt_ed25519_signer.rb` |
 | Windows/Scheduled Task | `C:\ProgramData\NexusAgent\identity_ed25519` | `C:\ProgramData\NexusAgent\identity_ed25519.pub` | `C:\ProgramData\NexusAgent\config.json` |
 
 私钥只在本机，权限限制为 root/SYSTEM/管理员可读。公钥不是 token，不能直接作为凭据；请求必须用私钥签名。
+
+OpenWrt/iStoreOS 上的 OpenSSL 1.1.1 不一定支持 `pkeyutl` Ed25519 signing。OpenWrt Agent 会先尝试系统 OpenSSL；失败时使用 Nexus 随安装器下载的纯 Ruby signer。该 signer 只读取本机 PKCS#8 Ed25519 私钥并输出 64 字节签名，不保存 token。
 
 ## API 与权威存储
 

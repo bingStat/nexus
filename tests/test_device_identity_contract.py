@@ -61,6 +61,17 @@ class DeviceIdentityContractTests(unittest.TestCase):
         self.assertIn("identity_ed25519", windows)
         self.assertIn("identity_ed25519", openwrt)
 
+    def test_openwrt_installer_downloads_dedicated_ed25519_signer(self) -> None:
+        installer = (ROOT / "install-openwrt.sh").read_text(encoding="utf-8")
+        agent = (ROOT / "openwrt_agent.sh").read_text(encoding="utf-8")
+        signer = ROOT / "openwrt_ed25519_signer.rb"
+
+        self.assertTrue(signer.exists())
+        self.assertIn("openwrt_ed25519_signer.rb", installer)
+        self.assertIn("NEXUS_ED25519_SIGNER", installer)
+        self.assertIn("ruby \"$ED25519_SIGNER\" sign", agent)
+        self.assertIn("ruby \"$ED25519_SIGNER\" key-id", agent)
+
 
 if __name__ == "__main__":
     unittest.main()
