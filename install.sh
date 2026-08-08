@@ -33,7 +33,15 @@ esac
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR"
 curl -fsSL "$SOURCE_BASE/agent/unix_agent.py" -o "$INSTALL_DIR/agent.py"
-python3 -m venv "$INSTALL_DIR/venv"
+if ! python3 -m venv "$INSTALL_DIR/venv"; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y python3-venv
+    python3 -m venv "$INSTALL_DIR/venv"
+  else
+    fail "python3 venv creation failed and apt-get is unavailable"
+  fi
+fi
 "$INSTALL_DIR/venv/bin/pip" install --disable-pip-version-check --quiet requests cryptography
 python3 - "$CONFIG_FILE" "$DEVICE_ID" "$BROKER_URL" "$API_URL" "$IDENTITY_KEY" "$IDENTITY_PUB" <<'PY'
 import json, os, sys
