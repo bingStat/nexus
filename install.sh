@@ -278,8 +278,8 @@ install_openwrt_agent() {
   mkdir -p "$install_dir" "$config_dir"
   chmod 700 "$config_dir"
   generate_ssh_key "$ssh_key" "nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)"
-  copy_or_fetch openwrt_v3_agent.sh "$install_dir/v3-agent.sh"
-  copy_or_fetch openwrt_ed25519_signer.rb "$install_dir/openwrt_ed25519_signer.rb"
+  copy_or_fetch nexus_v3/assets/openwrt_v3_agent.sh "$install_dir/v3-agent.sh"
+  copy_or_fetch nexus_v3/assets/openwrt_ed25519_signer.rb "$install_dir/openwrt_ed25519_signer.rb"
   chmod 755 "$install_dir/v3-agent.sh" "$install_dir/openwrt_ed25519_signer.rb"
 
   if [ ! -f "$identity_key" ]; then

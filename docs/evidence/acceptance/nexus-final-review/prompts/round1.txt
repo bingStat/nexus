@@ -1,1 +1,0 @@
-你是 Nexus 架构结项评审委员。系统目标是：ChatGPT 通过 Nexus 直接控制已授权节点；Agent 在线时目标设备不可改变，Broker 只能改变传输路径；Victus WSL 通过常用 Windows Chrome Profile 3 的 Playwright Extension 调用 Claude/Gemini。当前已验证：Global API 2.1.4；EU/CN Broker；规范设备过滤；Victus Windows Agent 10/10 快速任务成功、超时后恢复；Gemini 和 Claude 网页实际调用成功；Browser Adapter 支持 transcript 和幂等。请严格给出：结项前仍必须完成的 P0、可延期 P1、Go/No-Go 门槛、结项报告必须列出的已知限制。不要假设整机重启演练已完成。

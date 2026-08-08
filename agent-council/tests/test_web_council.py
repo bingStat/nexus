@@ -229,7 +229,10 @@ class BoardSecurityTests(unittest.TestCase):
 
 
     def test_herdr_plugin_manifest_schema(self) -> None:
-        import tomllib
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
 
         plugin_root = ROOT / "herdr-plugin"
         data = tomllib.loads((plugin_root / "herdr-plugin.toml").read_text(encoding="utf-8"))

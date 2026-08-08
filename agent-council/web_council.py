@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import secrets
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -35,6 +37,9 @@ PROVIDER_URLS = {
     "claude": "https://claude.ai/",
     "gemini": "https://gemini.google.com/",
 }
+
+_THREAD_LOCKS_GUARD = threading.Lock()
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
 
 
 class WebCouncilError(RuntimeError):
@@ -75,7 +80,7 @@ def sha256_text(text: str) -> str:
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{int(time.time() * 1000000)}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp")
     tmp.write_text(text, encoding="utf-8", newline="\n")
     last_error: PermissionError | None = None
     for _ in range(8):
@@ -105,13 +110,24 @@ class DirectoryLock:
         self.path = path
         self.timeout = timeout
         self.stale_after = stale_after
+        self._thread_lock: threading.Lock | None = None
 
     def __enter__(self) -> "DirectoryLock":
+        lock_key = str(self.path.resolve())
+        with _THREAD_LOCKS_GUARD:
+            self._thread_lock = _THREAD_LOCKS.setdefault(lock_key, threading.Lock())
+        self._thread_lock.acquire()
         deadline = time.monotonic() + self.timeout
         while True:
             try:
                 os.mkdir(self.path)
-                atomic_write_text(self.path / "owner.json", json.dumps({"pid": os.getpid(), "created_at": now_iso()}))
+                try:
+                    (self.path / "owner.json").write_text(
+                        json.dumps({"pid": os.getpid(), "created_at": now_iso()}),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
                 return self
             except FileExistsError:
                 if self._is_stale():
@@ -122,7 +138,11 @@ class DirectoryLock:
                 time.sleep(0.05)
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
-        self._clear()
+        try:
+            self._clear()
+        finally:
+            if self._thread_lock:
+                self._thread_lock.release()
 
     def _is_stale(self) -> bool:
         try:

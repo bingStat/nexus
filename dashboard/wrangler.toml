@@ -1,6 +1,6 @@
 name = "nexus-dashboard"
 main = "nexus-dashboard-worker.js"
-compatibility_date = "2026-07-30"
+compatibility_date = "2026-08-08"
 
 [[r2_buckets]]
 binding = "NEXUS_BUCKET"
@@ -12,4 +12,3 @@ zone_name = "bings.app"
 
 [vars]
 AUTH_USER = "admin"
-AUTH_PASS = "nexus2026"

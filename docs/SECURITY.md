@@ -1,14 +1,90 @@
-# Nexus 安全基线
+# Nexus v3 安全基线
 
-- 不在聊天、命令输出、日志、Git 或 transcript 中保存 Token、密码、Cookie、私钥。
-- v2.6 起 Agent 鉴权使用 Nexus 专用 Ed25519 设备身份；私钥只在设备本机，Global API/Broker 只保存或缓存公钥。
-- 新设备注册后为 `pending`，必须通过管理员 API/网页批准为 `approved` 后才能心跳、领取任务或提交回执。
-- Agent 请求必须携带 `X-Nexus-Device`、`X-Nexus-Key-Id`、`X-Nexus-Timestamp`、`X-Nexus-Nonce`、`X-Nexus-Signature`，服务端必须验签并防重放。
-- Browser Bridge Token 仅保存在本地 secret 文件；启动脚本只读取等号右侧实际值。
-- Agent 在线时直接向规范目标设备调度；SSH、Desktop Commander 和 WSL 仅为标明的救援通道。
-- 设备别名只用于匹配，不创建重复设备记录。
-- 所有任务使用 UUID、lease、attempt、execution ledger 与 idempotency key。
-- 不自动绕过 Claude/Google 的 CAPTCHA、MFA 或安全验证。
-- 高风险操作执行前需要明确确认，并保留备份、原子替换和回滚路径。
+## 1. 身份模型
 
-设备身份签名规范见 `docs/DEVICE_IDENTITY_AUTH.md`。
+- Agent 不保存共享 API token。
+- 每台设备拥有 Nexus 专用 Ed25519 API identity：
+  - Linux/OpenWrt：`/etc/nexus-agent/identity_ed25519`
+  - Windows：`C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519`
+  - VSC：`~/.local/nexus-agent-v3/identity_ed25519`
+- Registry 只保存 public key、key_id、设备元数据和批准状态。
+- 新设备注册后默认为 `pending`，必须批准为 `approved` 后才能领取任务。
+
+## 2. 请求签名
+
+Agent 对 claim 和 complete 请求签名，必须携带：
+
+```text
+X-Nexus-Device
+X-Nexus-Key-Id
+X-Nexus-Timestamp
+X-Nexus-Nonce
+X-Nexus-Signature
+```
+
+Broker 验证：
+
+- device id；
+- approved public key；
+- key_id；
+- timestamp 窗口；
+- nonce 防重放；
+- request body hash。
+
+## 3. SSH trust
+
+- SSH identity 与 API identity 分离。
+- 每台设备单独生成 Nexus SSH key。
+- Registry 通过 `/v3/ssh/authorized-keys` 发布 approved 设备 SSH public keys。
+- 同步脚本只改写 `authorized_keys` 中的 Nexus 管理区块：
+  - `### BEGIN NEXUS MANAGED SSH KEYS`
+  - `### END NEXUS MANAGED SSH KEYS`
+- 不使用 cron/timer 自动轮询；新设备批准后手动或安装时触发一次同步。
+
+## 4. 命令执行边界
+
+- 命令必须指定 canonical device id。
+- Broker 可以改变传输路径，但不能把逻辑目标改派到别的设备。
+- `n1` / `ax3600` 优先自领取；不能自领取时才通过 ThinkCenter managed target。
+- 高危命令默认拦截，除非显式配置 `NEXUS_V3_ALLOW_DANGEROUS=1` 并获得人工确认。
+
+高危操作包括但不限于：
+
+- 删除大范围文件或数据库；
+- 修改网络、路由、防火墙、Tailscale、Cloudflare Tunnel；
+- 重启/关机；
+- 修改密码、密钥、token、authorized_keys 非 Nexus 管理区块；
+- 格式化磁盘、分区、擦除设备。
+
+## 5. Secret 处理
+
+不得提交或打印：
+
+- private key；
+- `NEXUS_V3_ADMIN_KEY`；
+- `NEXUS_CHATGPT_API_KEY`；
+- dashboard Basic Auth；
+- Cloudflare / Bitwarden / Supabase / browser session secrets；
+- cookie、localStorage、MFA 材料。
+
+ChatGPT Remote 的 bearer token 存储在服务端 env 文件中，不进入 dashboard 静态页面。
+
+## 6. VSC 特殊限制
+
+VSC 已加入 Tailscale，但使用 userspace networking：
+
+- VSC outbound SSH tailnet 节点必须使用 `tailscale nc` 或 `ProxyCommand`；
+- 其他节点 inbound 到 VSC 会被 KU Leuven HPC SSH certificate policy 拦截；
+- 不能用普通 `authorized_keys` 变更绕过 HPC 登录策略。
+
+## 7. 验收标准
+
+不能只凭“服务 active”报告成功。至少需要：
+
+- registry/broker health；
+- device approved；
+- agent registered；
+- job completed；
+- exit_code 符合预期；
+- output 可验证；
+- 对 SSH trust，至少验证 public key 数量和一条真实 SSH 登录路径。

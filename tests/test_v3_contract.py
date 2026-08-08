@@ -62,7 +62,7 @@ def test_agent_command_argv_uses_platform_shell() -> None:
 def test_v3_installers_are_separate_from_legacy_services() -> None:
     root = Path(__file__).resolve().parents[1]
     installer = (root / "install.sh").read_text(encoding="utf-8")
-    agent = (root / "openwrt_v3_agent.sh").read_text(encoding="utf-8")
+    agent = (root / "nexus_v3" / "assets" / "openwrt_v3_agent.sh").read_text(encoding="utf-8")
     python_agent = (root / "nexus_v3" / "agent.py").read_text(encoding="utf-8")
     broker = (root / "nexus_v3" / "broker.py").read_text(encoding="utf-8")
 

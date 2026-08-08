@@ -21,7 +21,7 @@
 | OpenWrt/procd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/v3.env` |
 | Windows/Scheduled Task | `C:\ProgramData\NexusAgent\identity_ed25519` | `C:\ProgramData\NexusAgent\identity_ed25519.pub` | `C:\ProgramData\NexusAgent\v3.json` |
 
-OpenWrt 的 Ed25519 fallback signer 存储在 `/opt/nexus-agent/openwrt_ed25519_signer.rb`。它只做本机私钥签名，不保存 token。
+OpenWrt 的仓库内运行时资产位于 `nexus_v3/assets/`；安装后 Ed25519 fallback signer 存储在 `/opt/nexus-agent/openwrt_ed25519_signer.rb`。它只做本机私钥签名，不保存 token。
 
 ## SSH 公钥增长
 
