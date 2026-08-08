@@ -305,7 +305,7 @@ def load_repo_nexus_config(repo: Path) -> tuple[dict[str, Any], str] | tuple[Non
     except OSError:
         return None, None
     match = re.search(
-        r"### Nexus 控制配置（原 `nexus\.json`）\s*\n\s*```json\s*\n(.*?)\n```",
+        r"#{2,3} Nexus 控制配置（原 `nexus\.json`）\s*\n\s*```json\s*\n(.*?)\n```",
         readme,
         re.DOTALL,
     )

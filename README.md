@@ -1,131 +1,80 @@
 # Nexus v3 远程控制
 
-Nexus 是一个个人设备集群远程控制面。当前 v3 架构模仿 DesktopCommanderMCP 的 Remote MCP 思路：ChatGPT 或 MCP 客户端不直接连接任何设备，而是访问本地 Nexus Remote Gateway；Gateway 把任务提交到区域 Broker；已批准的 Agent 只领取属于自己的任务，并用 Nexus 专用 Ed25519 身份签名注册、领取和回执。
-
-## 当前架构
+Nexus 是个人设备集群远程控制面。ChatGPT 不直接 SSH 到设备，而是调用 Nexus Remote API；任务进入区域 Broker 后，由已批准 Agent 自行领取并用本机 `identity_ed25519` 签名回执。
 
 ```text
-ChatGPT / MCP 客户端
-  -> Nexus ChatGPT Remote API 或 MCP Adapter
-  -> Registry
-  -> EU / CN Broker
-  -> 已批准目标 Agent
+ChatGPT / MCP -> Nexus Remote API -> Registry -> EU/CN Broker -> Agent
 ```
 
-鉴权不再依赖“每台机器一个 API token”。每台设备生成一套 Nexus device Ed25519 keypair：公钥就是设备的 API key / device identity，同时也是该设备加入 SSH 互信网络的公钥；服务器只保存公钥和审批状态。Agent 每次注册、领取任务、提交完成回执时都用私钥签名。
+## 当前节点
 
-## 规范设备 ID
+| 设备 ID | 区域 | 状态 | 说明 |
+|---|---:|---|---|
+| `oracle` | EU | 已部署 | Registry、EU Broker、ChatGPT Remote、MCP；有 admin key 与 ChatGPT bearer token |
+| `thinkcenter` | CN | 已部署 | CN Broker、Agent；有 admin key |
+| `n1` | CN | 已部署 | OpenWrt/iStoreOS Agent，自行领取任务 |
+| `vsc` | EU | 已部署 | HPC 用户态 Agent；入站 SSH 受 VSC/HPC 策略限制 |
+| `victus` | EU | 已部署 | Windows Agent，计划任务运行 |
+| `victus-wsl` | EU | 已部署 | WSL Agent |
+| `elitebook` | EU | 预留 | 新设备 ID |
+| `ax3600` | CN | 预留 | OpenWrt；可自领任务，必要时 ThinkCenter 指挥 |
 
-EU 区域：
+每个节点只保留一套 Nexus 身份：
 
-- `oracle`
-- `vsc`
-- `victus`
-- `victus-wsl`
-- `elitebook`
+```text
+/etc/nexus-agent/identity_ed25519      # 私钥：API 签名 + SSH 登录
+/etc/nexus-agent/identity_ed25519.pub  # 公钥：设备 API key + SSH public key
+```
 
-CN 区域：
+Windows Victus 路径：
 
-- `thinkcenter`
-- `n1`
-- `ax3600`
+```text
+C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519
+C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519.pub
+```
 
-`n1` 和 `ax3600` 能运行 OpenWrt Agent 时自行领取任务；如果目标尚未注册或未批准，Remote Gateway 可以按 `NEXUS_V3_MANAGED_TARGETS` 通过 ThinkCenter 的显式 SSH fallback 指挥它们。
+## 一键安装
 
-## 唯一安装脚本
-
-对外只保留一个安装脚本：
+Linux/systemd：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sudo sh -s -- <mode>
+curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sudo sh -s -- <设备ID>
 ```
 
-本地开发可直接运行仓库里的同一个脚本：
-
-```bash
-sudo ./install.sh <mode>
-```
-
-支持模式：
-
-- `registry`
-- `broker eu`
-- `broker cn`
-- `agent <规范设备 ID>`
-- `<规范设备 ID>`
-- `openwrt-agent <规范设备 ID>`
-- `remote`
-- `managed-targets`
-- `sync-ssh-keys`
-- `sync-cluster-ssh`
-
-示例：
-
-```bash
-sudo ./install.sh registry
-sudo NEXUS_V3_REGION=cn NEXUS_V3_BIND=0.0.0.0 ./install.sh broker cn
-sudo ./install.sh thinkcenter
-sudo ./install.sh remote
-```
-
-OpenWrt：
+OpenWrt/iStoreOS：
 
 ```sh
-sh install.sh n1
-sh install.sh ax3600
+curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sh -s -- <设备ID>
 ```
 
-## 新设备加入集群
-
-任意新设备加入 Nexus 时，只需要运行同一个安装脚本。安装器会自动完成：
-
-1. 生成一套 Nexus device Ed25519 keypair。公钥就是 API key，同时作为 SSH 公钥加入机器互信网络；私钥既用于 API 请求签名，也用于 SSH 登录。
-
-   | 用途 | 私钥 | 公钥 |
-   |---|---|---|
-   | API 签名 + SSH 互信 | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` |
-
-2. 把 `device_id + public_key + hostname + platform` 注册到 Registry。
-3. 设备被批准后，从 Registry 拉取所有 approved 设备的 SSH 公钥，并同步到各终端 `authorized_keys` 的 Nexus 管理区块。
-
-Linux/systemd 新设备：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sudo sh -s -- <规范设备 ID>
-```
-
-示例：
+常用示例：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sudo sh -s -- elitebook
-```
-
-OpenWrt/iStoreOS 新设备：
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sh -s -- <规范设备 ID>
-```
-
-示例：
-
-```sh
 curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sh -s -- n1
+
+sudo ./install.sh registry
+sudo ./install.sh broker eu
+sudo ./install.sh broker cn
+sudo ./install.sh remote
+sudo ./install.sh thinkcenter
 ```
 
-新设备首次注册后状态是 `pending`。在拥有 `NEXUS_V3_ADMIN_KEY` 的控制机上，用仓库本地脚本批准：
+## 批准新设备
 
-```bash
-sudo python3 scripts/approve_v3_devices.py <规范设备 ID>
-```
+新设备首次注册为 `pending`。当前有 admin key 的机器：
 
-如果 Registry 不在本机，显式指定 Registry 地址：
+- `oracle`：`/etc/nexus-v3.env` 内有 `NEXUS_V3_ADMIN_KEY`
+- `thinkcenter`：`/etc/nexus-v3.env` 内有 `NEXUS_V3_ADMIN_KEY`
+
+批准命令：
 
 ```bash
 sudo env NEXUS_V3_REGISTRY_URL=https://nexus-global-api.bings.app \
-  python3 scripts/approve_v3_devices.py <规范设备 ID>
+  python3 scripts/approve_v3_devices.py <设备ID>
 ```
 
-批准后，从任意已能 SSH 到其它节点的控制机触发全体 SSH 公钥同步：
+批准后同步 SSH 公钥。SSH 同步不使用 cron；只在安装/批准新机器后触发一次：
 
 ```bash
 NEXUS_V3_REGISTRY_URL=https://nexus-global-api.bings.app \
@@ -133,7 +82,7 @@ NEXUS_CLUSTER_SSH_HOSTS='oracle_amd root@100.103.12.14 root@100.90.67.12' \
 sudo ./install.sh sync-cluster-ssh
 ```
 
-`NEXUS_CLUSTER_SSH_HOSTS` 写“当前这台控制机能 SSH 到的全体终端”。默认值覆盖 Oracle、ThinkCenter 和 N1；如果新增了其它可达终端，把它们追加进去即可。同步脚本不会改写用户自己的 SSH key，只会替换：
+同步脚本只替换 `authorized_keys` 中这个区块，不改用户自己的 key：
 
 ```text
 ### BEGIN NEXUS MANAGED SSH KEYS
@@ -141,82 +90,38 @@ sudo ./install.sh sync-cluster-ssh
 ### END NEXUS MANAGED SSH KEYS
 ```
 
-这样每加入一台新设备，Registry 中的 approved SSH 公钥集合都会增长一次；同步后，所有可达终端都会信任这台新设备的 Nexus SSH 公钥，同时新设备也会信任已有设备的 Nexus SSH 公钥。
+OpenWrt/Dropbear 写入 `/etc/dropbear/authorized_keys`；Linux root 写入 `/root/.ssh/authorized_keys`；VSC/Windows 用户路径需按该用户环境同步。
 
-## SSH 信任同步
+## ChatGPT Action 配置
 
-每台设备只有一套 Nexus device key：
-
-- 私钥：`/etc/nexus-agent/identity_ed25519`
-- 公钥：`/etc/nexus-agent/identity_ed25519.pub`
-
-这个公钥就是设备 API key，同时登记为 SSH public key。Registry 通过 `/v3/ssh/authorized-keys` 暴露所有已批准设备的公钥。
-
-安装器会安装本地一次性同步脚本，只重写 `authorized_keys` 中 Nexus 管理的区块。SSH 公钥同步不使用 cron/timer；新设备安装或批准后，执行：
-
-```bash
-sudo ./install.sh sync-cluster-ssh
-```
-
-Agent 安装完成时也会 best-effort 触发一次集群 SSH 公钥刷新。
-
-## ChatGPT Action
-
-ChatGPT 侧以本 README 的“ChatGPT / Action / 归档配置（集中版）”为根目录唯一来源；同时为了自动化测试和安装器分发，保留 `agent-council/integrations/` 下的机器可读副本：
-
-- `agent-council/integrations/nexus-v3-chatgpt-remote-prompt.md`
-- `agent-council/integrations/nexus-v3-remote-control-openapi.json`
-
-当前 ChatGPT Action 使用：
+主 Action 入口：
 
 ```text
 https://nexus-global-api.bings.app
 ```
 
-该域名保留 `/v3/*` 给 Registry，同时把 `/health`、`/openapi.json`、`/api/*` 转发给 `nexus-chatgpt-remote`。不要把 dashboard 地址 `https://nexus.bings.app/` 当成 Action API 地址。
+不要把 Dashboard 地址 `https://nexus.bings.app/` 当作 Action API。Action 使用 Bearer token，token 在 `oracle:/etc/nexus-chatgpt-remote.env` 的 `NEXUS_CHATGPT_API_KEY`；不要写入仓库或聊天记录。
 
-本地 Remote 服务也会动态提供 OpenAPI：
+推荐在 ChatGPT 里配置：
 
-```text
-http://127.0.0.1:18131/openapi.json
-```
+- Instructions：复制“远程控制 ChatGPT 提示词”。
+- Action Schema：复制“远程控制 Action JSON”。
+- Authentication：Bearer token，填 `NEXUS_CHATGPT_API_KEY` 的值。
 
-Action 鉴权使用 Bearer token，对应环境变量 `NEXUS_CHATGPT_API_KEY`，配置文件位于：
+## 运行时位置
 
-```text
-/etc/nexus-chatgpt-remote.env
-```
+| 项 | 路径 |
+|---|---|
+| Registry DB | `/var/lib/nexus-v3/registry.db` |
+| Broker DB | `/var/lib/nexus-v3/broker.db` |
+| Linux Agent 配置 | `/etc/nexus-agent/v3.json` |
+| OpenWrt Agent 配置 | `/etc/nexus-agent/v3.env` |
+| ChatGPT Remote 环境 | `/etc/nexus-chatgpt-remote.env` |
+| 设备批准脚本 | `scripts/approve_v3_devices.py` |
+| 验证脚本 | `scripts/verify_v3.py` |
+| 机器可读 Action 文件 | `agent-council/integrations/` |
 
-不要把 token、私钥、cookie 或浏览器会话内容写入仓库、提示词或聊天记录。
-
-## 运行时文件
-
-- Registry 数据库：`/var/lib/nexus-v3/registry.db`
-- Broker 数据库：`/var/lib/nexus-v3/broker.db`
-- Linux Agent 配置：`/etc/nexus-agent/v3.json`
-- OpenWrt Agent 配置：`/etc/nexus-agent/v3.env`
-- 设备 API 私钥：`/etc/nexus-agent/identity_ed25519`
-- 设备 API 公钥：`/etc/nexus-agent/identity_ed25519.pub`
-- Nexus SSH 身份：复用 `identity_ed25519` / `identity_ed25519.pub`
-- ChatGPT Remote 环境：`/etc/nexus-chatgpt-remote.env`
-
-## 源码结构
-
-- `install.sh`：唯一用户入口安装脚本。
-- `nexus_v3/`：Registry、Broker、Agent、MCP Adapter、ChatGPT Action Bridge、OpenWrt 运行时资产和共享远控逻辑。
-- `nexus_v3/assets/openwrt_v3_agent.sh`：OpenWrt Agent 运行时资产，由 `install.sh` 自动安装。
-- `nexus_v3/assets/openwrt_ed25519_signer.rb`：OpenWrt Ed25519 签名 fallback，由 `install.sh` 自动安装。
-- `agent-council/`：保留的 Council 机制。
-- `agent-council/integrations/`：ChatGPT 提示词与 Action OpenAPI 的机器可读副本；人工入口和根目录归档集中在本文件。
-- `dashboard/`：`https://nexus.bings.app/` 的 Cloudflare Worker + R2 可视化页面源码。
-- `scripts/`：设备批准与验证辅助脚本；不是安装入口。
-- `tests/`：契约测试。
-- 根目录文档：只保留 `README.md`；旧 `nexus.json`、Action JSON、提示词、`AGENTS.md` 和历史目标摘要均已合并到本文件的集中版章节。
-## ChatGPT / Action / 归档配置（集中版）
-
-本节是 ChatGPT 提示词、Action JSON、Nexus 控制配置和历史目标的唯一根目录归档。根目录不再单独保留这些文档或 JSON 文件；需要复制到 ChatGPT Action 时，直接从对应代码块取用。
-
-### Nexus 控制配置（原 `nexus.json`）
+## Nexus 控制配置（原 `nexus.json`）
 
 ```json
 {
@@ -239,476 +144,7 @@ Action 鉴权使用 Bearer token，对应环境变量 `NEXUS_CHATGPT_API_KEY`，
 }
 ```
 
-### Nexus 持久任务 API Action JSON（原 `nexus-task-api-openapi.json`）
-
-```json
-{
-  "openapi": "3.0.3",
-  "info": {
-    "title": "Nexus Durable Task API",
-    "version": "2.1.2",
-    "description": "Create and resume durable cluster tasks. This API exposes deterministic aliases, Web Council orchestration, status, and approval recording. It intentionally excludes arbitrary shell execution."
-  },
-  "servers": [
-    {
-      "url": "https://nexus-api.bings.app"
-    }
-  ],
-  "security": [
-    {
-      "BearerAuth": []
-    }
-  ],
-  "paths": {
-    "/api/v1/tasks": {
-      "post": {
-        "summary": "Create a durable Nexus task",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Existing idempotent task",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Task"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Task"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unknown alias or invalid input"
-          },
-          "409": {
-            "description": "NEEDS_RECIPE, idempotency conflict, or approval gate"
-          }
-        },
-        "description": "Always preserve task_id and reuse the same Idempotency-Key after a timeout.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTask"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      },
-      "get": {
-        "summary": "List recent Nexus tasks",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            }
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/{task_id}": {
-      "get": {
-        "summary": "Get one Nexus task status",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Task status card",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Task"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Task not found"
-          }
-        },
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/{task_id}/events": {
-      "get": {
-        "summary": "Get the durable task event log",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/{task_id}/responses": {
-      "post": {
-        "summary": "Submit an explicitly user-provided Web Council reply",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "description": "This endpoint never reads browser tabs or provider credentials.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WebResponse"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/{task_id}/advance": {
-      "post": {
-        "summary": "Advance Web Council to cross-review",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/{task_id}/finalize": {
-      "post": {
-        "summary": "Start final Council synthesis",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "description": "Returns quickly. Poll the same task_id until terminal.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/{task_id}/approve": {
-      "post": {
-        "summary": "Record explicit approval for a gated task",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "description": "Approval is recorded only. This API does not execute merge, push, deploy, main-branch mutation, or credential changes.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Approval"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    }
-  },
-  "components": {
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "Nexus connector key"
-      }
-    },
-    "schemas": {
-      "CreateTask": {
-        "type": "object",
-        "required": [
-          "alias",
-          "prompt"
-        ],
-        "properties": {
-          "alias": {
-            "type": "string",
-            "description": "Exact registered alias, for example nexus or thinkcenter:jellyfin"
-          },
-          "prompt": {
-            "type": "string"
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "web-discussion",
-              "web-hybrid",
-              "council-standard"
-            ],
-            "default": "web-discussion"
-          },
-          "requested_actions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "default": [
-              "analyze"
-            ]
-          },
-          "risk_policy": {
-            "type": "string",
-            "default": "auto_worktree_only"
-          },
-          "idempotency_key": {
-            "type": "string",
-            "description": "Optional body fallback; prefer Idempotency-Key header"
-          }
-        }
-      },
-      "WebResponse": {
-        "type": "object",
-        "required": [
-          "provider",
-          "round",
-          "response"
-        ],
-        "properties": {
-          "provider": {
-            "type": "string",
-            "enum": [
-              "chatgpt",
-              "claude",
-              "gemini"
-            ]
-          },
-          "round": {
-            "type": "integer",
-            "enum": [
-              1,
-              2
-            ]
-          },
-          "response": {
-            "type": "string"
-          }
-        }
-      },
-      "Approval": {
-        "type": "object",
-        "required": [
-          "approval_code"
-        ],
-        "properties": {
-          "approval_code": {
-            "type": "string"
-          },
-          "approved_by": {
-            "type": "string",
-            "default": "user"
-          }
-        }
-      },
-      "Task": {
-        "type": "object",
-        "properties": {
-          "task_id": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "phase": {
-            "type": "string"
-          },
-          "alias": {
-            "type": "string"
-          },
-          "target_device": {
-            "type": "string"
-          },
-          "repo_path": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "nexus_job_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "nexus_execution_status": {
-            "type": "string"
-          },
-          "council_verdict": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "machine_acceptance_passed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "deployment_status": {
-            "type": "string"
-          },
-          "approval": {
-            "type": "object"
-          },
-          "next_action": {
-            "type": "string"
-          },
-          "markdown_digest": {
-            "type": "string"
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-### Nexus 远程控制 ChatGPT 提示词（原 `nexus-v3-chatgpt-remote-prompt.md`）
+## 远程控制 ChatGPT 提示词
 
 ```markdown
 # Nexus 远程控制器（ChatGPT Instructions）
@@ -765,231 +201,13 @@ VSC 可能位于 HPC 环境，Tailscale 以用户态方式运行。入站 SSH �
 - 风险：剩余问题或需要用户确认的下一步。
 ```
 
-### Nexus 远程控制 API Action JSON（原 `nexus-v3-remote-control-openapi.json`）
+## 远程控制 Action JSON
 
 ```json
-{
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Nexus 远程控制 API",
-    "version": "3.0.0",
-    "description": "供 ChatGPT 安全调用的 Nexus v3 远程控制适配器，设计形态模仿 DesktopCommanderMCP Remote Gateway。它只暴露已批准设备列表、公开身份查询、单设备命令提交和任务状态查询。"
-  },
-  "servers": [
-    {
-      "url": "https://nexus-global-api.bings.app"
-    }
-  ],
-  "security": [
-    {
-      "BearerAuth": []
-    }
-  ],
-  "paths": {
-    "/api/devices": {
-      "get": {
-        "operationId": "listDevices",
-        "summary": "按审批状态列出 Nexus 设备",
-        "description": "默认列出 approved 设备。需要排查注册或审批状态时，可传入 pending 等状态。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "description": "设备审批状态，默认 approved。",
-            "schema": {
-              "type": "string",
-              "default": "approved"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功返回设备列表。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "502": {
-            "description": "Registry 依赖不可用。"
-          }
-        }
-      }
-    },
-    "/api/devices/{device_id}": {
-      "get": {
-        "operationId": "getDevice",
-        "summary": "查询一台已批准 Nexus 设备的公开身份",
-        "description": "用于确认规范设备 ID、区域、主机名、平台和公开密钥记录。不会返回私钥或 token。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "device_id",
-            "in": "path",
-            "required": true,
-            "description": "规范设备 ID，例如 thinkcenter、n1、oracle、vsc、victus、victus-wsl、elitebook 或 ax3600。",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功返回设备公开身份。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "404": {
-            "description": "设备不存在或未批准。"
-          },
-          "502": {
-            "description": "Registry 依赖不可用。"
-          }
-        }
-      }
-    },
-    "/api/commands": {
-      "post": {
-        "operationId": "executeCommand",
-        "summary": "在一台明确指定的 Nexus 设备上执行一条命令",
-        "description": "提交一个单设备、单命令任务。默认等待短时间返回终态；若仍在运行，会返回 job_id 与 broker_region，之后用 getJob 继续查询。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "device_id",
-                  "command"
-                ],
-                "properties": {
-                  "device_id": {
-                    "type": "string",
-                    "description": "规范设备 ID。"
-                  },
-                  "command": {
-                    "type": "string",
-                    "description": "要执行的一条 shell 命令。高风险命令会被安全策略拒绝，除非服务端显式放开。"
-                  },
-                  "timeout_ms": {
-                    "type": "integer",
-                    "description": "Agent 侧命令超时时间，单位毫秒。",
-                    "default": 30000,
-                    "minimum": 1000,
-                    "maximum": 86400000
-                  },
-                  "wait_seconds": {
-                    "type": "integer",
-                    "description": "Remote Gateway 等待任务完成的秒数。返回非终态时继续用 getJob 查询。",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "返回终态任务结果，或返回已接受但仍在运行的任务卡片。"
-          },
-          "400": {
-            "description": "请求字段缺失或格式无效。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "403": {
-            "description": "命令被安全策略拒绝。"
-          },
-          "502": {
-            "description": "Registry 或 Broker 依赖不可用。"
-          }
-        }
-      }
-    },
-    "/api/jobs/{region}/{job_id}": {
-      "get": {
-        "operationId": "getJob",
-        "summary": "从 EU 或 CN Broker 查询 Nexus 任务",
-        "description": "根据 executeCommand 返回的 broker_region 和 job_id 查询任务状态与输出。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "region",
-            "in": "path",
-            "required": true,
-            "description": "Broker 区域。",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "eu",
-                "cn"
-              ]
-            }
-          },
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "description": "任务 ID。",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功返回任务状态、退出码和输出。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "404": {
-            "description": "任务不存在。"
-          },
-          "502": {
-            "description": "Broker 依赖不可用。"
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {},
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
-      }
-    }
-  }
-}
+{"openapi":"3.1.0","info":{"title":"Nexus 远程控制 API","version":"3.0.0","description":"供 ChatGPT 安全调用的 Nexus v3 远程控制适配器，设计形态模仿 DesktopCommanderMCP Remote Gateway。它只暴露已批准设备列表、公开身份查询、单设备命令提交和任务状态查询。"},"servers":[{"url":"https://nexus-global-api.bings.app"}],"security":[{"BearerAuth":[]}],"paths":{"/api/devices":{"get":{"operationId":"listDevices","summary":"按审批状态列出 Nexus 设备","description":"默认列出 approved 设备。需要排查注册或审批状态时，可传入 pending 等状态。","security":[{"BearerAuth":[]}],"parameters":[{"name":"status","in":"query","required":false,"description":"设备审批状态，默认 approved。","schema":{"type":"string","default":"approved"}}],"responses":{"200":{"description":"成功返回设备列表。"},"401":{"description":"Bearer token 无效或缺失。"},"502":{"description":"Registry 依赖不可用。"}}}},"/api/devices/{device_id}":{"get":{"operationId":"getDevice","summary":"查询一台已批准 Nexus 设备的公开身份","description":"用于确认规范设备 ID、区域、主机名、平台和公开密钥记录。不会返回私钥或 token。","security":[{"BearerAuth":[]}],"parameters":[{"name":"device_id","in":"path","required":true,"description":"规范设备 ID，例如 thinkcenter、n1、oracle、vsc、victus、victus-wsl、elitebook 或 ax3600。","schema":{"type":"string"}}],"responses":{"200":{"description":"成功返回设备公开身份。"},"401":{"description":"Bearer token 无效或缺失。"},"404":{"description":"设备不存在或未批准。"},"502":{"description":"Registry 依赖不可用。"}}}},"/api/commands":{"post":{"operationId":"executeCommand","summary":"在一台明确指定的 Nexus 设备上执行一条命令","description":"提交一个单设备、单命令任务。默认等待短时间返回终态；若仍在运行，会返回 job_id 与 broker_region，之后用 getJob 继续查询。","security":[{"BearerAuth":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"required":["device_id","command"],"properties":{"device_id":{"type":"string","description":"规范设备 ID。"},"command":{"type":"string","description":"要执行的一条 shell 命令。高风险命令会被安全策略拒绝，除非服务端显式放开。"},"timeout_ms":{"type":"integer","description":"Agent 侧命令超时时间，单位毫秒。","default":30000,"minimum":1000,"maximum":86400000},"wait_seconds":{"type":"integer","description":"Remote Gateway 等待任务完成的秒数。返回非终态时继续用 getJob 查询。","default":20,"minimum":0,"maximum":120}}}}}},"responses":{"200":{"description":"返回终态任务结果，或返回已接受但仍在运行的任务卡片。"},"400":{"description":"请求字段缺失或格式无效。"},"401":{"description":"Bearer token 无效或缺失。"},"403":{"description":"命令被安全策略拒绝。"},"502":{"description":"Registry 或 Broker 依赖不可用。"}}}},"/api/jobs/{region}/{job_id}":{"get":{"operationId":"getJob","summary":"从 EU 或 CN Broker 查询 Nexus 任务","description":"根据 executeCommand 返回的 broker_region 和 job_id 查询任务状态与输出。","security":[{"BearerAuth":[]}],"parameters":[{"name":"region","in":"path","required":true,"description":"Broker 区域。","schema":{"type":"string","enum":["eu","cn"]}},{"name":"job_id","in":"path","required":true,"description":"任务 ID。","schema":{"type":"string"}}],"responses":{"200":{"description":"成功返回任务状态、退出码和输出。"},"401":{"description":"Bearer token 无效或缺失。"},"404":{"description":"任务不存在。"},"502":{"description":"Broker 依赖不可用。"}}}}},"components":{"schemas":{},"securitySchemes":{"BearerAuth":{"type":"http","scheme":"bearer"}}}}
 ```
 
-### Nexus Web Assistant 系统提示词（原 `WEB_NEXUS_SYSTEM_PROMPT.md`）
+## Web Council 系统提示词（可选）
 
 ```markdown
 # Nexus Web Assistant System Prompt
@@ -1010,141 +228,16 @@ VSC 可能位于 HPC 环境，Tailscale 以用户态方式运行。入站 SSH �
 12. 最终回复应列出：task_id、节点、repo、状态、Council verdict、验证结果、是否部署及下一步。
 ```
 
-### Nexus 其他目标与历史思路摘要（原 `其他目标.md`）
+## 持久任务 Action JSON（可选，Council/Task API）
 
-```markdown
-# Nexus 其他目标与历史思路摘要
-
-本文只保留不属于当前 Nexus v3 主线、但仍有参考价值的目标和设计思想。旧代码、旧验收材料和旧入口已删除，不再作为当前运行事实来源。例外：council 机制保留在 `agent-council/`。
-
-## 当前主线之外的历史架构
-
-### v1：直接 SSH / Webhook
-
-早期思路是让控制端直接 SSH 或通过同步 HTTP 调用执行命令。核心问题是超时、审计弱、失败重试和重复执行难以处理。该方向只保留为“紧急救援通道”的思想，不再作为 Nexus 主链路。
-
-### v2：Supabase CAS 任务队列
-
-v2 使用 Supabase `devices` / `commands` 表做设备目录、心跳和异步任务队列，通过 `pending -> running -> completed` 的 CAS 状态机规避网页端 30 秒超时。这个方案证明了“Agent pull + 后台 job + 可轮询结果”的价值，但缺点是 token 分发、数据库耦合和区域 broker 职责不清。
-
-当前 v3 继承的核心思想：
-
-- 任务异步化，控制端提交后通过 job id 查询结果；
-- 目标设备不可随意改派；
-- 任务必须有 lease、状态和真实回执；
-- 不把长任务绑定在前端 HTTP 请求生命周期上。
-
-被 v3 替代的部分：
-
-- 每设备 token / API key；
-- Supabase 作为热队列；
-- 旧 Global API / Broker 补丁式演进；
-- 旧 Windows/Linux agent 分叉实现。
-
-### v2.5：区域 Broker 与浏览器顾问链路
-
-v2.5 引入 Oracle EU Broker、ThinkCenter CN Broker、目标不可变、execution ledger、Windows worker 超时治理，以及 Claude/Gemini 网页顾问 transcript。旧验收原文已删除，只保留这里的核心思想。
-
-当前 v3 继承的核心思想：
-
-- EU/CN broker 分区；
-- command result 必须有 `completed`、`exit_code` 和真实输出；
-- 高危命令需要明确确认；
-- 浏览器登录态不能被复制或导出；
-- Claude/Gemini 之类网页顾问只能作为受控工具，不进入设备鉴权核心。
-
-被 v3 弱化或归档的部分：
-
-- 旧 Browser Bridge 和 Agent Council 运行时；
-- Herdr / SuperAssistant 旧插件路径；
-- Supabase 目录镜像作为权威状态；
-- 旧 `nexus_system_prompt.md` 和旧 Action contract。
-
-## 当前 v3 主线外的可选目标
-
-### 1. VSC inbound SSH
-
-VSC 已加入 Tailscale，用户态节点为 `vsc-tier2`，tailnet IP 为 `100.123.110.53`。因为 VSC 使用 `--tun=userspace-networking`，普通 `ssh 100.x` 不会自动走 Tailscale 路由；VSC 主动访问 tailnet 节点需要使用 `tailscale nc` 或 `ProxyCommand`。
-
-已验证：
-
-- VSC → Oracle / ThinkCenter / N1 / Victus：可通过 `tailscale nc` + Nexus SSH key 登录。
-- 其他节点 → VSC：会被 KU Leuven HPC SSH certificate policy 拦截，普通 Nexus public key 不足以登录。
-
-后续若要完成 VSC inbound full mesh，需要走 VSC/HPC 官方 SSH certificate 或门户 key 注册机制，而不是单纯改 `authorized_keys`。
-
-### 2. AX3600 独立 Agent
-
-设计上 AX3600 与 N1 一样，优先作为 OpenWrt agent 自己领取任务；如果设备资源、依赖或网络限制导致自领取不稳定，则由 ThinkCenter 通过 SSH managed target 指挥。
-
-当前判断标准：
-
-- 能稳定运行 `nexus_v3/assets/openwrt_v3_agent.sh`：作为独立 Nexus device；
-- 不能稳定自领取：保留在 `NEXUS_V3_MANAGED_TARGETS`，由 ThinkCenter 执行。
-
-### 3. EliteBook 纳管
-
-`elitebook` 已作为 canonical EU device 预留，但未作为当前核心验收节点。后续纳管流程与 `victus` 相同：生成 Nexus API identity、生成 Nexus SSH key、注册到 global registry、管理员批准、同步 SSH public keys、执行只读命令验收。
-
-### 4. Dashboard 动态化
-
-当前 dashboard 以静态布局和可选 `/status.json` 为主。后续可以把 registry/broker 只读状态做成实时聚合，但不能把 admin key、ChatGPT bearer token 或设备私钥暴露给浏览器。
-
-可做但不属于核心控制面的目标：
-
-- 设备在线状态实时刷新；
-- 最近任务只读展示；
-- SSH mesh 覆盖矩阵；
-- VSC userspace Tailscale 状态提示；
-- broker region health 卡片。
-
-### 5. 浏览器顾问系统
-
-Claude/Gemini 网页顾问、transcript、cross-review 机制可以作为独立“研究/决策辅助”工具保留，但不应该和 Nexus 设备控制面混在一起。它的核心原则仍然有效：
-
-- 不读取 cookie、密码、localStorage 或 MFA 材料；
-- 不绕过 CAPTCHA / 人机验证；
-- transcript 必须可审计；
-- 失败时明确区分登录、页面、selector、模型响应和超时。
-
-## 已删除的旧目录
-
-- 旧 `mcp_server/`：旧 FastMCP/SSE 服务。
-- 旧 `deploy/`：旧 Supabase / Worker / schema 部署材料。
-- 旧 `docs/evidence/`：旧架构、验收报告和证据。
-- 旧 `install*.sh`、`install.ps1`：旧安装器。
-- 旧 `browser-bridge/`：旧 Claude/Gemini browser adapter。
-- 旧缓存、临时备份、R2 工具、SuperAssistant 实验文件。
-
-保留例外：`agent-council/`。Council 机制仍可作为 Claude/Gemini 顾问流和交叉讨论机制使用，但不进入 Nexus v3 设备鉴权核心。
-
-恢复原则：需要恢复某个旧思想时，先写成当前 v3 设计，再实现；不要恢复旧运行时代码。
+```json
+{"openapi":"3.0.3","info":{"title":"Nexus Durable Task API","version":"2.1.2","description":"Create and resume durable cluster tasks. This API exposes deterministic aliases, Web Council orchestration, status, and approval recording. It intentionally excludes arbitrary shell execution."},"servers":[{"url":"https://nexus-api.bings.app"}],"security":[{"BearerAuth":[]}],"paths":{"/api/v1/tasks":{"post":{"summary":"Create a durable Nexus task","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Existing idempotent task","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Task"}}}},"201":{"description":"Created","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Task"}}}},"400":{"description":"Unknown alias or invalid input"},"409":{"description":"NEEDS_RECIPE, idempotency conflict, or approval gate"}},"description":"Always preserve task_id and reuse the same Idempotency-Key after a timeout.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateTask"}}}},"parameters":[{"name":"Idempotency-Key","in":"header","required":false,"schema":{"type":"string"}}]},"get":{"summary":"List recent Nexus tasks","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Success"}},"parameters":[{"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}}]}},"/api/v1/tasks/{task_id}":{"get":{"summary":"Get one Nexus task status","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Task status card","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Task"}}}},"404":{"description":"Task not found"}},"parameters":[{"name":"task_id","in":"path","required":true,"schema":{"type":"string"}}]}},"/api/v1/tasks/{task_id}/events":{"get":{"summary":"Get the durable task event log","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Success"}},"parameters":[{"name":"task_id","in":"path","required":true,"schema":{"type":"string"}}]}},"/api/v1/tasks/{task_id}/responses":{"post":{"summary":"Submit an explicitly user-provided Web Council reply","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Success"}},"description":"This endpoint never reads browser tabs or provider credentials.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WebResponse"}}}},"parameters":[{"name":"task_id","in":"path","required":true,"schema":{"type":"string"}}]}},"/api/v1/tasks/{task_id}/advance":{"post":{"summary":"Advance Web Council to cross-review","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Success"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false}}}},"parameters":[{"name":"task_id","in":"path","required":true,"schema":{"type":"string"}}]}},"/api/v1/tasks/{task_id}/finalize":{"post":{"summary":"Start final Council synthesis","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Success"}},"description":"Returns quickly. Poll the same task_id until terminal.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false}}}},"parameters":[{"name":"task_id","in":"path","required":true,"schema":{"type":"string"}}]}},"/api/v1/tasks/{task_id}/approve":{"post":{"summary":"Record explicit approval for a gated task","security":[{"BearerAuth":[]}],"responses":{"200":{"description":"Success"}},"description":"Approval is recorded only. This API does not execute merge, push, deploy, main-branch mutation, or credential changes.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Approval"}}}},"parameters":[{"name":"task_id","in":"path","required":true,"schema":{"type":"string"}}]}}},"components":{"securitySchemes":{"BearerAuth":{"type":"http","scheme":"bearer","bearerFormat":"Nexus connector key"}},"schemas":{"CreateTask":{"type":"object","required":["alias","prompt"],"properties":{"alias":{"type":"string","description":"Exact registered alias, for example nexus or thinkcenter:jellyfin"},"prompt":{"type":"string"},"mode":{"type":"string","enum":["web-discussion","web-hybrid","council-standard"],"default":"web-discussion"},"requested_actions":{"type":"array","items":{"type":"string"},"default":["analyze"]},"risk_policy":{"type":"string","default":"auto_worktree_only"},"idempotency_key":{"type":"string","description":"Optional body fallback; prefer Idempotency-Key header"}}},"WebResponse":{"type":"object","required":["provider","round","response"],"properties":{"provider":{"type":"string","enum":["chatgpt","claude","gemini"]},"round":{"type":"integer","enum":[1,2]},"response":{"type":"string"}}},"Approval":{"type":"object","required":["approval_code"],"properties":{"approval_code":{"type":"string"},"approved_by":{"type":"string","default":"user"}}},"Task":{"type":"object","properties":{"task_id":{"type":"string"},"status":{"type":"string"},"phase":{"type":"string"},"alias":{"type":"string"},"target_device":{"type":"string"},"repo_path":{"type":["string","null"]},"nexus_job_id":{"type":["string","null"]},"nexus_execution_status":{"type":"string"},"council_verdict":{"type":["string","null"]},"machine_acceptance_passed":{"type":["boolean","null"]},"deployment_status":{"type":"string"},"approval":{"type":"object"},"next_action":{"type":"string"},"markdown_digest":{"type":"string"}}}}}}
 ```
 
-### Agent 工作规范（原 `AGENTS.md`）
+## 保留原则
 
-```markdown
-# AGENTS.md
-
-## 工程原则
-
-- 不保留向后兼容。旧路径、旧协议和旧脚本应删除或移入明确归档，而不是继续叠加兼容层、fallback 或迁移逻辑。
-- 选择能完整满足当前需求的最简单实现。避免投机式抽象、过度配置和不必要的间接层。
-- 分层增长：先做出最小可端到端运行的版本，再在稳定产品上增加能力。
-- 模块职责保持清晰：Registry 管身份，Broker 管任务队列，Agent 管本机执行，Remote Gateway 管 ChatGPT/MCP 调用入口。
-- 优先使用成熟、维护良好的依赖；已有依赖能解决时不重复造轮子。
-- 架构决策面向长期使用，不接受临时补丁式设计作为主线。
-
-## Nexus 项目规则
-
-1. 生产路径固定为：`client -> Nexus remote gateway -> registry -> regional broker -> target agent`。
-2. 故障切换不能改变逻辑目标设备。
-3. Agent 只消费所属区域 Broker 的任务。
-4. 必须使用规范设备 ID；不支持别名、`all` 或 `broadcast`。
-5. `install.sh` 是唯一用户入口安装脚本。
-6. Linux 使用 systemd，OpenWrt 使用 procd。
-7. `n1` 与 `ax3600` 能运行 OpenWrt Agent 时自行领取任务；否则由 ThinkCenter 通过显式 SSH fallback 管理。
-8. 凭据只能来自显式参数或环境变量，并仅保存到权限受限的配置文件。
-9. ChatGPT Action OpenAPI 与提示词保存在 `agent-council/integrations/`。
-10. 完成标准：语法检查、测试、服务健康检查和真实只读命令回执均通过。
-```
+- 根目录文档只保留本 README。
+- `install.sh` 是唯一安装入口。
+- `agent-council/` 保留 Council 机制。
+- `agent-council/integrations/` 保留机器可读副本，供测试和安装器使用。
+- 旧 Supabase、旧 webhook、旧 browser bridge、旧多脚本安装方案不再作为当前事实来源。
