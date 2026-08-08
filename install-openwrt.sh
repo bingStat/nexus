@@ -37,7 +37,7 @@ chmod 700 "$CONFIG_DIR"
 [ -f "$IDENTITY_PUB" ] && cp "$IDENTITY_PUB" "$BACKUP_DIR/identity_ed25519.pub.bak"
 [ -f /etc/init.d/nexus-agent ] && cp /etc/init.d/nexus-agent "$BACKUP_DIR/nexus-agent.init.bak"
 
-curl -fsSL "$SOURCE_BASE/agent/openwrt_agent.sh" -o "$INSTALL_DIR/agent.sh"
+curl -fsSL "$SOURCE_BASE/openwrt_agent.sh" -o "$INSTALL_DIR/agent.sh"
 chmod 755 "$INSTALL_DIR/agent.sh"
 
 {
