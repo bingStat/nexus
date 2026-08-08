@@ -2,7 +2,6 @@
 # frozen_string_literal: true
 
 require "digest"
-require "securerandom"
 
 P = (1 << 255) - 19
 L = (1 << 252) + 27_742_317_777_372_353_535_851_937_790_883_648_493
@@ -137,11 +136,15 @@ def openssh_public_line(raw_public_key, comment)
   "ssh-ed25519 #{base64_encode(openssh_public_blob(raw_public_key))} #{comment}".strip
 end
 
+def random_bytes(length)
+  File.binread("/dev/urandom", length)
+end
+
 def openssh_private_pem(seed, comment)
   raw_public_key = public_key_from_seed(seed)
   public_blob = openssh_public_blob(raw_public_key)
   private_key = seed + raw_public_key
-  check = SecureRandom.random_number(1 << 32)
+  check = random_bytes(4).unpack1("N")
   private_blob = u32(check) + u32(check) +
                  ssh_string("ssh-ed25519".b) +
                  ssh_string(raw_public_key) +
@@ -254,7 +257,7 @@ def key_id(public_key_path)
 end
 
 def generate_key(private_key_path, public_key_path, comment)
-  seed = SecureRandom.random_bytes(32)
+  seed = random_bytes(32)
   raw_public_key = public_key_from_seed(seed)
   File.binwrite(private_key_path, openssh_private_pem(seed, comment))
   File.write(public_key_path, "#{openssh_public_line(raw_public_key, comment)}\n")
