@@ -16,14 +16,14 @@
 
 | 用途 | API 地址 | 存储 |
 |---|---|---|
-| 设备注册 | `POST https://nexus-api.bings.app/api/device-identities/register` | Oracle `/var/lib/nexus-global-api/device_identities.db` |
-| 待批准列表 | `GET https://nexus-api.bings.app/api/admin/device-identities?status=pending` | 同上 |
-| 批准 | `POST https://nexus-api.bings.app/api/admin/device-identities/{device_id}/approve` | 同上 |
-| 拒绝 | `POST https://nexus-api.bings.app/api/admin/device-identities/{device_id}/reject` | 同上 |
-| 撤销 | `POST https://nexus-api.bings.app/api/admin/device-identities/{device_id}/revoke` | 同上 |
-| approved 公钥查询 | `GET https://nexus-api.bings.app/api/device-identities/{device_id}/public-key` | 同上 |
-| Agent 心跳 | `POST https://nexus-api.bings.app/api/devices/heartbeat` | Global API 写 Supabase `public.devices` 镜像 |
-| Broker 领取 | `GET {regional_broker}/claim?...` | Broker 热队列；公钥从 Global API 查询并短 TTL 缓存 |
+| 设备注册 | `POST https://nexus-global-api.bings.app/api/device-identities/register` | Oracle `/var/lib/nexus-global-api/device_identities.db` |
+| 待批准列表 | `GET https://nexus-global-api.bings.app/api/admin/device-identities?status=pending` | 同上 |
+| 批准 | `POST https://nexus-global-api.bings.app/api/admin/device-identities/{device_id}/approve` | 同上 |
+| 拒绝 | `POST https://nexus-global-api.bings.app/api/admin/device-identities/{device_id}/reject` | 同上 |
+| 撤销 | `POST https://nexus-global-api.bings.app/api/admin/device-identities/{device_id}/revoke` | 同上 |
+| approved 公钥查询 | `GET https://nexus-global-api.bings.app/api/device-identities/{device_id}/public-key` | 同上 |
+| Agent 心跳 | `POST https://nexus-global-api.bings.app/api/devices/heartbeat` | Global API 写 Supabase `public.devices` 镜像 |
+| Broker 领取 | `GET {regional_broker}/claim?...` | Broker 热队列；公钥从 `https://nexus-global-api.bings.app` 查询并短 TTL 缓存 |
 | Broker 回执 | `POST {regional_broker}/complete` | Broker job store；异步镜像任务结果 |
 | Supabase 目录镜像 | `https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1/device_identities` | 非权威审计/目录镜像 |
 
@@ -50,4 +50,3 @@ NEXUS-ED25519-V1
 ```
 
 验签规则：规范设备 ID、approved 公钥、key_id 匹配、时间窗口 300 秒、nonce 10 分钟防重放、body hash 按原始请求体计算。
-

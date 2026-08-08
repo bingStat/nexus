@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DEVICE_ID="${1:-${NEXUS_DEVICE_ID:-}}"
-API_URL="${NEXUS_API_URL:-https://nexus-api.bings.app}"
+API_URL="${NEXUS_API_URL:-https://nexus-global-api.bings.app}"
 SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394}"
 INSTALL_DIR="/opt/nexus-agent"
 CONFIG_DIR="/etc/nexus-agent"

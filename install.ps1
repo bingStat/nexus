@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)][ValidateSet("victus","elitebook")][string]$DeviceId,
     [uri]$BrokerUrl = "http://127.0.0.1:18000",
-    [uri]$ApiUrl = "https://nexus-api.bings.app",
+    [uri]$ApiUrl = "https://nexus-global-api.bings.app",
     [string]$SourceBase = "https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394"
 )
 
