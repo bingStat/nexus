@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 
 from .common import json_dumps, read_json, utc_now, verify_http_signature
 
@@ -165,7 +166,10 @@ class Handler(BaseHTTPRequestHandler):
         path_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         headers = {key: value for key, value in self.headers.items()}
         device_id = str(headers.get("X-Nexus-Device") or "").strip().lower()
-        public_key = fetch_public_key(device_id)
+        try:
+            public_key = fetch_public_key(device_id)
+        except (HTTPError, URLError, TimeoutError) as exc:
+            raise PermissionError(f"registry lookup failed for {device_id}: {exc}") from exc
         verified_device = verify_http_signature(public_key, headers, self.command, path_query, body)
         self.replay_guard.accept(verified_device, str(headers.get("X-Nexus-Nonce") or ""))
         return verified_device

@@ -59,6 +59,10 @@ start_service() {
 }
 EOF
 chmod 755 /etc/init.d/nexus-v3-agent
+/etc/init.d/nexus-v3-agent stop >/dev/null 2>&1 || true
+ps w 2>/dev/null | awk '/[v]3-agent\.sh/ {print $1}' | while read -r pid; do
+  [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+done
 /etc/init.d/nexus-v3-agent enable
 /etc/init.d/nexus-v3-agent restart
 sleep 2

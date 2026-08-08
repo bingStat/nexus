@@ -13,14 +13,24 @@ IDENTITY_KEY="${NEXUS_IDENTITY_KEY:-/etc/nexus-agent/identity_ed25519}"
 IDENTITY_PUB="${NEXUS_IDENTITY_PUBLIC_KEY:-/etc/nexus-agent/identity_ed25519.pub}"
 ED25519_SIGNER="${NEXUS_ED25519_SIGNER:-/opt/nexus-agent/openwrt_ed25519_signer.rb}"
 RUN_DIR="${NEXUS_RUN_DIR:-/var/run/nexus-v3-agent}"
+LOCK_DIR="${NEXUS_LOCK_DIR:-/var/run/nexus-v3-agent.lock}"
 POLL_SECONDS="${NEXUS_POLL_SECONDS:-1}"
 WAIT_SECONDS="${NEXUS_WAIT_SECONDS:-20}"
 REQUEST_TIMEOUT="${NEXUS_REQUEST_TIMEOUT:-35}"
 
 mkdir -p "$RUN_DIR"
+[ -d "$LOCK_DIR" ] || mkdir -p "$LOCK_DIR" 2>/dev/null || true
 [ -n "$DEVICE_ID" ] || { echo "NEXUS_DEVICE_ID is required" >&2; exit 1; }
 [ -n "$REGISTRY_URL" ] || { echo "NEXUS_V3_REGISTRY_URL is required" >&2; exit 1; }
 [ -n "$BROKER_URL" ] || { echo "NEXUS_V3_BROKER_URL is required" >&2; exit 1; }
+if ! mkdir "$LOCK_DIR/instance" 2>/dev/null; then
+  echo "Another Nexus v3 Agent instance is running" >&2
+  exit 1
+fi
+cleanup_lock() {
+  rmdir "$LOCK_DIR/instance" 2>/dev/null || true
+}
+trap cleanup_lock EXIT INT TERM
 
 json_escape() {
   awk 'BEGIN{ORS=""}{gsub(/\\/,"\\\\");gsub(/"/,"\\\"");gsub(/\t/,"\\t");gsub(/\r/,"\\r");if(NR>1)printf "\\n";printf "%s",$0;}'
