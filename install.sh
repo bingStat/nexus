@@ -39,25 +39,6 @@ install_python_package() {
   done
 }
 
-generate_ssh_key() {
-  key_path="$1"
-  comment="$2"
-  pub_path="$key_path.pub"
-  if [ -f "$key_path" ] && [ -f "$pub_path" ]; then
-    return 0
-  fi
-  if command -v ssh-keygen >/dev/null 2>&1; then
-    ssh-keygen -t ed25519 -N '' -C "$comment" -f "$key_path" >/dev/null
-  elif command -v dropbearkey >/dev/null 2>&1; then
-    dropbearkey -t ed25519 -f "$key_path" >/dev/null
-    dropbearkey -y -f "$key_path" 2>/dev/null | sed -n '/^ssh-/p' | sed -n '1p' > "$pub_path"
-  else
-    fail "ssh-keygen or dropbearkey is required for Nexus SSH identity"
-  fi
-  chmod 600 "$key_path"
-  chmod 644 "$pub_path"
-}
-
 install_ssh_sync_script() {
   install_dir="$1"
   registry_url="$2"
@@ -272,19 +253,19 @@ install_openwrt_agent() {
   config_file="$config_dir/v3.env"
   identity_key="$config_dir/identity_ed25519"
   identity_pub="$config_dir/identity_ed25519.pub"
-  ssh_key="$config_dir/ssh_ed25519"
-  ssh_pub="$config_dir/ssh_ed25519.pub"
+  ssh_key="$identity_key"
+  ssh_pub="$identity_pub"
 
   mkdir -p "$install_dir" "$config_dir"
   chmod 700 "$config_dir"
-  generate_ssh_key "$ssh_key" "nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)"
   copy_or_fetch nexus_v3/assets/openwrt_v3_agent.sh "$install_dir/v3-agent.sh"
   copy_or_fetch nexus_v3/assets/openwrt_ed25519_signer.rb "$install_dir/openwrt_ed25519_signer.rb"
   chmod 755 "$install_dir/v3-agent.sh" "$install_dir/openwrt_ed25519_signer.rb"
 
   if [ ! -f "$identity_key" ]; then
-    openssl genpkey -algorithm Ed25519 -out "$identity_key" >/dev/null 2>&1 || fail "failed to generate identity key"
-    openssl pkey -in "$identity_key" -pubout -out "$identity_pub" >/dev/null 2>&1 || fail "failed to derive public key"
+    ruby "$install_dir/openwrt_ed25519_signer.rb" generate "$identity_key" "$identity_pub" "nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)" || fail "failed to generate identity key"
+  elif [ ! -f "$identity_pub" ]; then
+    ruby "$install_dir/openwrt_ed25519_signer.rb" public "$identity_key" "$identity_pub" "nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)" || fail "failed to derive public key"
   fi
   chmod 600 "$identity_key"
   chmod 644 "$identity_pub"
@@ -356,11 +337,10 @@ install_agent() {
   config_file="$config_dir/v3.json"
   identity_key="$config_dir/identity_ed25519"
   identity_pub="$config_dir/identity_ed25519.pub"
-  ssh_key="$config_dir/ssh_ed25519"
-  ssh_pub="$config_dir/ssh_ed25519.pub"
+  ssh_key="$identity_key"
+  ssh_pub="$identity_pub"
   mkdir -p "$install_dir" "$config_dir"
   chmod 700 "$config_dir"
-  generate_ssh_key "$ssh_key" "nexus-$device_id@$(hostname 2>/dev/null || echo linux)"
   install_python_package "$install_dir" __init__.py common.py agent.py
 
   "$PYTHON" - <<PY

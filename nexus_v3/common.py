@@ -82,7 +82,7 @@ class Identity:
         self.private_key_path = private_key_path
         self.public_key_path = public_key_path
         self.private_key = load_or_create_private_key(private_key_path, public_key_path)
-        self.public_key_pem = public_key_path.read_text(encoding="ascii")
+        self.public_key_pem = public_key_path.read_text(encoding="ascii").strip()
         self.key_id = public_key_id(self.private_key.public_key())
 
     def sign_headers(self, device_id: str, method: str, url_or_path: str, body: bytes) -> dict[str, str]:
@@ -123,31 +123,39 @@ class Identity:
 def load_or_create_private_key(private_key_path: Path, public_key_path: Path) -> Ed25519PrivateKey:
     private_key_path.parent.mkdir(parents=True, exist_ok=True)
     if private_key_path.exists():
-        key = serialization.load_pem_private_key(private_key_path.read_bytes(), password=None)
+        raw = private_key_path.read_bytes()
+        try:
+            key = serialization.load_pem_private_key(raw, password=None)
+        except ValueError:
+            key = serialization.load_ssh_private_key(raw, password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise RuntimeError(f"identity key is not Ed25519: {private_key_path}")
     else:
         key = Ed25519PrivateKey.generate()
         private_key_path.write_bytes(key.private_bytes(
             serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
+            serialization.PrivateFormat.OpenSSH,
             serialization.NoEncryption(),
         ))
     if os.name != "nt":
         os.chmod(private_key_path.parent, 0o700)
         os.chmod(private_key_path, 0o600)
-    public_pem = key.public_key().public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
+    public_key = key.public_key().public_bytes(
+        serialization.Encoding.OpenSSH,
+        serialization.PublicFormat.OpenSSH,
     )
-    public_key_path.write_bytes(public_pem)
+    public_key_path.write_bytes(public_key + b"\n")
     if os.name != "nt":
         os.chmod(public_key_path, 0o644)
     return key
 
 
 def load_public_key(public_key_pem: str) -> Ed25519PublicKey:
-    key = serialization.load_pem_public_key(public_key_pem.encode("ascii"))
+    raw = public_key_pem.strip().encode("ascii")
+    try:
+        key = serialization.load_pem_public_key(raw)
+    except ValueError:
+        key = serialization.load_ssh_public_key(raw)
     if not isinstance(key, Ed25519PublicKey):
         raise ValueError("public key is not Ed25519")
     return key

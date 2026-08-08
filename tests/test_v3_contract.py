@@ -16,7 +16,7 @@ def test_v3_registration_and_http_signature_round_trip() -> None:
         private_key = Path(tmp) / "identity_ed25519"
         public_key = Path(tmp) / "identity_ed25519.pub"
         identity = Identity(private_key, public_key)
-        registration = identity.registration_payload("n1", "openwrt", "openwrt", "3.0.1-test", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest nexus-n1")
+        registration = identity.registration_payload("n1", "openwrt", "openwrt", "3.0.1-test", identity.public_key_pem)
 
         verify_registration_payload(registration)
 
@@ -26,7 +26,8 @@ def test_v3_registration_and_http_signature_round_trip() -> None:
 
         assert device_id == "n1"
         assert registration["key_id"] == identity.key_id
-        assert registration["ssh_public_key"].startswith("ssh-ed25519 ")
+        assert registration["public_key_ed25519"].startswith("ssh-ed25519 ")
+        assert registration["ssh_public_key"] == registration["public_key_ed25519"]
 
 
 def test_v3_rejects_stale_signature_timestamp() -> None:
@@ -76,7 +77,7 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "sync_ssh_authorized_keys.sh" in installer
     assert "sync-cluster-ssh" in installer
     assert "trigger_cluster_ssh_sync" in installer
-    assert "ssh_ed25519" in installer
+    assert "identity_ed25519" in installer
     assert "OnUnitActiveSec" not in installer
     assert "*/5 * * * * /opt/nexus-agent/sync_ssh_authorized_keys.sh" not in installer
     assert "/api/devices/heartbeat" not in agent

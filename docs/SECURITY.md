@@ -33,9 +33,9 @@ Broker 验证：
 
 ## 3. SSH trust
 
-- SSH identity 与 API identity 分离。
-- 每台设备单独生成 Nexus SSH key。
-- Registry 通过 `/v3/ssh/authorized-keys` 发布 approved 设备 SSH public keys。
+- API identity 与 SSH identity 使用同一套 Nexus device keypair。
+- 每台设备只生成 `/etc/nexus-agent/identity_ed25519` 和 `/etc/nexus-agent/identity_ed25519.pub`。
+- Registry 通过 `/v3/ssh/authorized-keys` 发布 approved 设备 public keys；这些 public keys 同时是 API identity 和 SSH identity。
 - 同步脚本只改写 `authorized_keys` 中的 Nexus 管理区块：
   - `### BEGIN NEXUS MANAGED SSH KEYS`
   - `### END NEXUS MANAGED SSH KEYS`

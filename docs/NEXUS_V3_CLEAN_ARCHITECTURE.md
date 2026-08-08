@@ -25,7 +25,7 @@ OpenWrt 的仓库内运行时资产位于 `nexus_v3/assets/`；安装后 Ed25519
 
 ## SSH 公钥增长
 
-Nexus API identity 和 SSH identity 分离。每台机器额外生成 `/etc/nexus-agent/ssh_ed25519` 和 `/etc/nexus-agent/ssh_ed25519.pub`，注册时只把 SSH 公钥交给 Registry。Registry 通过 `GET /v3/ssh/authorized-keys` 发布 approved 设备的 SSH 公钥列表。
+Nexus API identity 和 SSH identity 使用同一套 device keypair。每台机器只生成 `/etc/nexus-agent/identity_ed25519` 和 `/etc/nexus-agent/identity_ed25519.pub`。公钥就是设备 API key / device identity，同时作为 SSH public key 注册到 Registry。Registry 通过 `GET /v3/ssh/authorized-keys` 发布 approved 设备的公钥列表。
 
 各设备安装 `/opt/nexus-agent/sync_ssh_authorized_keys.sh`，但不使用 cron 或 systemd timer。新机器安装或审批后，运行一次 `install.sh sync-cluster-ssh`，由当前控制节点调动集群内可达设备同步 `authorized_keys` 的 Nexus 管理区块。
 

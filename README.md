@@ -12,7 +12,7 @@ ChatGPT / MCP 客户端
   -> 已批准目标 Agent
 ```
 
-鉴权不再依赖“每台机器一个 API token”。每台设备生成 Nexus 专用 Ed25519 密钥对，服务器只保存公钥和审批状态。Agent 每次注册、领取任务、提交完成回执时都用私钥签名。
+鉴权不再依赖“每台机器一个 API token”。每台设备生成一套 Nexus device Ed25519 keypair：公钥就是设备的 API key / device identity，同时也是该设备加入 SSH 互信网络的公钥；服务器只保存公钥和审批状态。Agent 每次注册、领取任务、提交完成回执时都用私钥签名。
 
 ## 规范设备 ID
 
@@ -79,14 +79,13 @@ sh install.sh ax3600
 
 任意新设备加入 Nexus 时，只需要运行同一个安装脚本。安装器会自动完成：
 
-1. 生成两组 Ed25519 key。API key 用来给 Agent 请求签名；SSH key 用来加入机器互信网络。
+1. 生成一套 Nexus device Ed25519 keypair。公钥就是 API key，同时作为 SSH 公钥加入机器互信网络；私钥既用于 API 请求签名，也用于 SSH 登录。
 
    | 用途 | 私钥 | 公钥 |
    |---|---|---|
-   | Agent 请求签名 | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` |
-   | 节点互相 SSH | `/etc/nexus-agent/ssh_ed25519` | `/etc/nexus-agent/ssh_ed25519.pub` |
+   | API 签名 + SSH 互信 | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` |
 
-2. 把 `device_id + API public_key + SSH public_key + hostname + platform` 注册到 Registry。
+2. 把 `device_id + public_key + hostname + platform` 注册到 Registry。
 3. 设备被批准后，从 Registry 拉取所有 approved 设备的 SSH 公钥，并同步到各终端 `authorized_keys` 的 Nexus 管理区块。
 
 Linux/systemd 新设备：
@@ -146,12 +145,12 @@ sudo ./install.sh sync-cluster-ssh
 
 ## SSH 信任同步
 
-每台设备拥有单独的 Nexus SSH 密钥：
+每台设备只有一套 Nexus device key：
 
-- 私钥：`/etc/nexus-agent/ssh_ed25519`
-- 公钥：`/etc/nexus-agent/ssh_ed25519.pub`
+- 私钥：`/etc/nexus-agent/identity_ed25519`
+- 公钥：`/etc/nexus-agent/identity_ed25519.pub`
 
-这套 SSH 身份与 API 签名用的 Ed25519 身份分离。设备注册时只把 SSH 公钥提交到 Registry；Registry 通过 `/v3/ssh/authorized-keys` 暴露所有已批准设备的 SSH 公钥。
+这个公钥就是设备 API key，同时登记为 SSH public key。Registry 通过 `/v3/ssh/authorized-keys` 暴露所有已批准设备的公钥。
 
 安装器会安装本地一次性同步脚本，只重写 `authorized_keys` 中 Nexus 管理的区块。SSH 公钥同步不使用 cron/timer；新设备安装或批准后，执行：
 
@@ -198,8 +197,7 @@ Action 鉴权使用 Bearer token，对应环境变量 `NEXUS_CHATGPT_API_KEY`，
 - OpenWrt Agent 配置：`/etc/nexus-agent/v3.env`
 - 设备 API 私钥：`/etc/nexus-agent/identity_ed25519`
 - 设备 API 公钥：`/etc/nexus-agent/identity_ed25519.pub`
-- Nexus SSH 私钥：`/etc/nexus-agent/ssh_ed25519`
-- Nexus SSH 公钥：`/etc/nexus-agent/ssh_ed25519.pub`
+- Nexus SSH 身份：复用 `identity_ed25519` / `identity_ed25519.pub`
 - ChatGPT Remote 环境：`/etc/nexus-chatgpt-remote.env`
 
 ## 源码结构

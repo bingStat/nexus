@@ -11,7 +11,7 @@ REGISTRY_URL="$(printf '%s' "${NEXUS_V3_REGISTRY_URL:-}" | sed 's:/*$::')"
 BROKER_URL="$(printf '%s' "${NEXUS_V3_BROKER_URL:-}" | sed 's:/*$::')"
 IDENTITY_KEY="${NEXUS_IDENTITY_KEY:-/etc/nexus-agent/identity_ed25519}"
 IDENTITY_PUB="${NEXUS_IDENTITY_PUBLIC_KEY:-/etc/nexus-agent/identity_ed25519.pub}"
-SSH_PUB="${NEXUS_SSH_PUBLIC_KEY:-/etc/nexus-agent/ssh_ed25519.pub}"
+SSH_PUB="${NEXUS_SSH_PUBLIC_KEY:-$IDENTITY_PUB}"
 ED25519_SIGNER="${NEXUS_ED25519_SIGNER:-/opt/nexus-agent/openwrt_ed25519_signer.rb}"
 RUN_DIR="${NEXUS_RUN_DIR:-/var/run/nexus-v3-agent}"
 LOCK_DIR="${NEXUS_LOCK_DIR:-/var/run/nexus-v3-agent.lock}"
@@ -46,20 +46,16 @@ sha256_file() {
 }
 
 key_id() {
-  der_file="$RUN_DIR/public-key.der"
-  if openssl pkey -pubin -in "$IDENTITY_PUB" -outform DER -out "$der_file" 2>/dev/null; then
-    digest="$(openssl dgst -sha256 -r "$der_file" 2>/dev/null | awk '{print $1}')"
-    [ -n "$digest" ] && { printf 'sha256:%s\n' "$digest"; return 0; }
-  fi
   ruby "$ED25519_SIGNER" key-id "$IDENTITY_PUB"
 }
 
 sign_file() {
   input_file="$1"
   output_file="$2"
+  ruby "$ED25519_SIGNER" sign "$IDENTITY_KEY" "$input_file" "$output_file" && return 0
   openssl pkeyutl -sign -inkey "$IDENTITY_KEY" -rawin -in "$input_file" -out "$output_file" 2>/dev/null && return 0
   openssl pkeyutl -sign -inkey "$IDENTITY_KEY" -in "$input_file" -out "$output_file" 2>/dev/null && return 0
-  ruby "$ED25519_SIGNER" sign "$IDENTITY_KEY" "$input_file" "$output_file"
+  return 1
 }
 
 nonce_value() {
