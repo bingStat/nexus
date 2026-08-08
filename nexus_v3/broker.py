@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
+
+from .common import json_dumps, read_json, utc_now, verify_http_signature
+
+VERSION = "3.0.0"
+
+
+class BrokerStore:
+    def __init__(self, db_path: Path):
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = db_path
+        with self.connect() as db:
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    target_device TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    timeout_ms INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    output TEXT NOT NULL DEFAULT '',
+                    exit_code INTEGER,
+                    lease_owner TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            db.commit()
+
+    def connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.db_path)
+        db.row_factory = sqlite3.Row
+        return db
+
+    def submit(self, payload: dict[str, Any]) -> dict[str, Any]:
+        target = str(payload.get("target_device") or payload.get("device_id") or "").strip().lower()
+        command = str(payload.get("command") or "")
+        if not target or not command:
+            raise ValueError("target_device and command are required")
+        now = utc_now()
+        job = {
+            "id": str(uuid.uuid4()),
+            "target_device": target,
+            "command": command,
+            "timeout_ms": int(payload.get("timeout_ms") or 30000),
+            "status": "pending",
+            "created_at": now,
+            "updated_at": now,
+            "output": "",
+        }
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO jobs(id,target_device,command,timeout_ms,status,output,created_at,updated_at) VALUES(:id,:target_device,:command,:timeout_ms,:status,:output,:created_at,:updated_at)",
+                job,
+            )
+            db.commit()
+        return job
+
+    def claim(self, device_id: str, lease_owner: str) -> dict[str, Any] | None:
+        now = utc_now()
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM jobs WHERE status='pending' AND target_device=? ORDER BY created_at LIMIT 1",
+                (device_id,),
+            ).fetchone()
+            if not row:
+                db.commit()
+                return None
+            db.execute("UPDATE jobs SET status='running', lease_owner=?, updated_at=? WHERE id=?", (lease_owner, now, row["id"]))
+            db.commit()
+            out = dict(row)
+            out["status"] = "running"
+            out["lease_owner"] = lease_owner
+            out["updated_at"] = now
+            return out
+
+    def complete(self, payload: dict[str, Any], device_id: str) -> dict[str, Any]:
+        job_id = str(payload.get("id") or "")
+        status = str(payload.get("status") or "")
+        if status not in {"completed", "failed", "timeout"}:
+            raise ValueError("invalid terminal status")
+        now = utc_now()
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise KeyError(job_id)
+            if row["target_device"] != device_id:
+                raise PermissionError("device cannot complete another device job")
+            db.execute(
+                "UPDATE jobs SET status=?, output=?, exit_code=?, updated_at=? WHERE id=?",
+                (status, str(payload.get("output") or ""), int(payload.get("exit_code") or 0), now, job_id),
+            )
+            db.commit()
+        return self.get(job_id)
+
+    def get(self, job_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise KeyError(job_id)
+            return dict(row)
+
+
+def admin_ok(handler: BaseHTTPRequestHandler) -> bool:
+    expected = os.getenv("NEXUS_V3_ADMIN_KEY", "")
+    return not expected or handler.headers.get("X-Nexus-Admin-Key") == expected
+
+
+def fetch_public_key(device_id: str) -> str:
+    registry = os.getenv("NEXUS_V3_REGISTRY_URL", "http://127.0.0.1:18101").rstrip("/")
+    with urlopen(f"{registry}/v3/devices/{device_id}/public-key", timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))["public_key_ed25519"]
+
+
+class Handler(BaseHTTPRequestHandler):
+    store: BrokerStore
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(json_dumps({"ts": utc_now(), "service": "broker", "remote": self.client_address[0], "msg": fmt % args}), flush=True)
+
+    def send_json(self, code: int, payload: Any) -> None:
+        body = json_dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def signed_device(self, body: bytes) -> str:
+        parsed = urlparse(self.path)
+        path_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        device_id = str(self.headers.get("X-Nexus-Device") or "").strip().lower()
+        public_key = fetch_public_key(device_id)
+        return verify_http_signature(public_key, dict(self.headers), self.command, path_query, body)
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        try:
+            if parsed.path == "/v3/health":
+                return self.send_json(200, {"status": "ok", "service": "nexus-v3-broker", "version": VERSION, "region": os.getenv("NEXUS_V3_REGION", "unknown")})
+            if parsed.path == "/v3/jobs":
+                if not admin_ok(self):
+                    return self.send_json(403, {"error": "admin auth failed"})
+                job_id = parse_qs(parsed.query).get("id", [""])[0]
+                return self.send_json(200, self.store.get(job_id))
+            if parsed.path == "/v3/jobs/claim":
+                device_id = self.signed_device(b"")
+                query = parse_qs(parsed.query)
+                lease_owner = query.get("agent_id", [device_id])[0]
+                wait = min(int(query.get("wait", ["20"])[0] or 20), 30)
+                deadline = time.time() + wait
+                while True:
+                    job = self.store.claim(device_id, lease_owner)
+                    if job:
+                        return self.send_json(200, job)
+                    if time.time() >= deadline:
+                        self.send_response(204)
+                        self.end_headers()
+                        return
+                    time.sleep(1)
+            self.send_json(404, {"error": "not_found"})
+        except PermissionError as exc:
+            self.send_json(403, {"error": str(exc)})
+        except KeyError:
+            self.send_json(404, {"error": "not_found"})
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        try:
+            if parsed.path == "/v3/jobs":
+                if not admin_ok(self):
+                    return self.send_json(403, {"error": "admin auth failed"})
+                return self.send_json(201, self.store.submit(read_json(body)))
+            if parsed.path == "/v3/jobs/complete":
+                device_id = self.signed_device(body)
+                return self.send_json(200, self.store.complete(read_json(body), device_id))
+            self.send_json(404, {"error": "not_found"})
+        except ValueError as exc:
+            self.send_json(400, {"error": str(exc)})
+        except PermissionError as exc:
+            self.send_json(403, {"error": str(exc)})
+        except KeyError:
+            self.send_json(404, {"error": "not_found"})
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bind", default=os.getenv("NEXUS_V3_BIND", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("NEXUS_V3_BROKER_PORT", "18100")))
+    parser.add_argument("--db", default=os.getenv("NEXUS_V3_BROKER_DB", "/var/lib/nexus-v3/broker.db"))
+    args = parser.parse_args()
+    Handler.store = BrokerStore(Path(args.db))
+    ThreadingHTTPServer((args.bind, args.port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
