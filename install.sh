@@ -54,8 +54,8 @@ REGISTRY_URL="${OVERRIDE_REGISTRY_URL:-${NEXUS_V3_REGISTRY_URL:-}}"
 [ -n "$REGISTRY_URL" ] || { echo "NEXUS_V3_REGISTRY_URL is required" >&2; exit 1; }
 
 target_home="${NEXUS_SSH_AUTHORIZED_HOME:-/root}"
-ssh_dir="$target_home/.ssh"
-auth_file="$ssh_dir/authorized_keys"
+auth_file="${NEXUS_SSH_AUTHORIZED_KEYS_FILE:-$target_home/.ssh/authorized_keys}"
+ssh_dir="$(dirname "$auth_file")"
 keys_file="/tmp/nexus-authorized-keys.$$"
 tmp_file="/tmp/nexus-authorized-keys-out.$$"
 begin="### BEGIN NEXUS MANAGED SSH KEYS"
@@ -110,6 +110,7 @@ EOF
 
 install_ssh_sync_openwrt() {
   install_ssh_sync_script /opt/nexus-agent "${1:-https://nexus-global-api.bings.app}"
+  append_env_once /etc/nexus-agent/ssh-sync.env NEXUS_SSH_AUTHORIZED_KEYS_FILE /etc/dropbear/authorized_keys
   if [ -f /etc/crontabs/root ]; then
     tmp="/tmp/nexus-crontab.$$"
     grep -v '/opt/nexus-agent/sync_ssh_authorized_keys.sh' /etc/crontabs/root > "$tmp" || true
