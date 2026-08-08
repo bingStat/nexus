@@ -64,7 +64,9 @@ class RecipeResolutionTests(unittest.TestCase):
                 council.resolve_acceptance_commands(repo, [], required=True)
 
     def test_repo_config_and_public_prompt_are_safe(self) -> None:
-        config = json.loads((ROOT.parent / "nexus.json").read_text(encoding="utf-8"))
+        config, source = council.load_repo_nexus_config(ROOT.parent)
+        self.assertEqual("README.md:Nexus 控制配置", source)
+        self.assertIsNotNone(config)
         self.assertTrue(config["verification"])
         prompt = (ROOT / "integrations" / "WEB_NEXUS_SYSTEM_PROMPT.md").read_text(encoding="utf-8")
         self.assertIn("task_id", prompt)
