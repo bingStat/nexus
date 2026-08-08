@@ -269,6 +269,15 @@ def derive_public(private_key_path, public_key_path, comment)
   File.chmod(0o644, public_key_path)
 end
 
+def convert_private(private_key_path, public_key_path, comment)
+  seed = private_seed(private_key_path)
+  raw_public_key = public_key_from_seed(seed)
+  File.binwrite(private_key_path, openssh_private_pem(seed, comment))
+  File.write(public_key_path, "#{openssh_public_line(raw_public_key, comment)}\n")
+  File.chmod(0o600, private_key_path)
+  File.chmod(0o644, public_key_path)
+end
+
 if $PROGRAM_NAME == __FILE__
   command, *args = ARGV
   case command
@@ -280,6 +289,10 @@ if $PROGRAM_NAME == __FILE__
     abort "usage: #{$PROGRAM_NAME} public <private-key> <public-key> <comment>" unless args.length == 3
 
     derive_public(args[0], args[1], args[2])
+  when "convert"
+    abort "usage: #{$PROGRAM_NAME} convert <private-key> <public-key> <comment>" unless args.length == 3
+
+    convert_private(args[0], args[1], args[2])
   when "sign"
     abort "usage: #{$PROGRAM_NAME} sign <private-key> <message-file> <signature-file>" unless args.length == 3
 
@@ -289,6 +302,6 @@ if $PROGRAM_NAME == __FILE__
 
     puts key_id(args[0])
   else
-    abort "usage: #{$PROGRAM_NAME} generate|public|sign|key-id ..."
+    abort "usage: #{$PROGRAM_NAME} generate|public|convert|sign|key-id ..."
   end
 end

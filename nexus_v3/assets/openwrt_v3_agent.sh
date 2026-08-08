@@ -24,6 +24,12 @@ mkdir -p "$RUN_DIR"
 [ -n "$DEVICE_ID" ] || { echo "NEXUS_DEVICE_ID is required" >&2; exit 1; }
 [ -n "$REGISTRY_URL" ] || { echo "NEXUS_V3_REGISTRY_URL is required" >&2; exit 1; }
 [ -n "$BROKER_URL" ] || { echo "NEXUS_V3_BROKER_URL is required" >&2; exit 1; }
+if [ -r "$IDENTITY_KEY" ] && ! sed -n '1p' "$IDENTITY_KEY" | grep -q 'BEGIN OPENSSH PRIVATE KEY'; then
+  ruby "$ED25519_SIGNER" convert "$IDENTITY_KEY" "$IDENTITY_PUB" "nexus-$DEVICE_ID@$(hostname 2>/dev/null || echo openwrt)" || {
+    echo "failed to convert Nexus identity key to OpenSSH format" >&2
+    exit 1
+  }
+fi
 if ! mkdir "$LOCK_DIR/instance" 2>/dev/null; then
   echo "Another Nexus v3 Agent instance is running" >&2
   exit 1

@@ -130,6 +130,12 @@ def load_or_create_private_key(private_key_path: Path, public_key_path: Path) ->
             key = serialization.load_ssh_private_key(raw, password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise RuntimeError(f"identity key is not Ed25519: {private_key_path}")
+        if not raw.startswith(b"-----BEGIN OPENSSH PRIVATE KEY-----"):
+            private_key_path.write_bytes(key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.OpenSSH,
+                serialization.NoEncryption(),
+            ))
     else:
         key = Ed25519PrivateKey.generate()
         private_key_path.write_bytes(key.private_bytes(
