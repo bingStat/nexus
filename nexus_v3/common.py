@@ -67,6 +67,16 @@ def canonical_registration_message(payload_without_proof: dict[str, Any]) -> byt
     return (REGISTRATION_VERSION + "\n" + sha256_hex(canonical)).encode("utf-8")
 
 
+def parse_utc_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise PermissionError("invalid signature timestamp") from exc
+    if parsed.tzinfo is None:
+        raise PermissionError("signature timestamp must include timezone")
+    return parsed.astimezone(UTC)
+
+
 class Identity:
     def __init__(self, private_key_path: Path, public_key_path: Path):
         self.private_key_path = private_key_path
@@ -153,7 +163,15 @@ def verify_registration_payload(payload: dict[str, Any]) -> None:
         raise PermissionError("registration proof is invalid") from exc
 
 
-def verify_http_signature(public_key_pem: str, headers: dict[str, str], method: str, path_query: str, body: bytes) -> str:
+def verify_http_signature(
+    public_key_pem: str,
+    headers: dict[str, str],
+    method: str,
+    path_query: str,
+    body: bytes,
+    *,
+    max_clock_skew_seconds: int = 300,
+) -> str:
     device_id = str(headers.get("X-Nexus-Device") or "").strip().lower()
     key_id = str(headers.get("X-Nexus-Key-Id") or "").strip()
     timestamp = str(headers.get("X-Nexus-Timestamp") or "").strip()
@@ -161,6 +179,10 @@ def verify_http_signature(public_key_pem: str, headers: dict[str, str], method: 
     signature = str(headers.get("X-Nexus-Signature") or "").strip()
     if not all([device_id, key_id, timestamp, nonce, signature]):
         raise PermissionError("missing signature headers")
+    signed_at = parse_utc_timestamp(timestamp)
+    skew = abs((datetime.now(UTC) - signed_at).total_seconds())
+    if skew > max_clock_skew_seconds:
+        raise PermissionError("signature timestamp outside allowed window")
     public_key = load_public_key(public_key_pem)
     if public_key_id(public_key) != key_id:
         raise PermissionError("key_id mismatch")
