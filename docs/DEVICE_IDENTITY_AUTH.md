@@ -1,14 +1,13 @@
 # Nexus 设备身份签名鉴权
 
-状态：v2.6 实施目标。Agent 不再保存 `NEXUS_API_TOKEN` / `apikey`；每台设备持有 Nexus 专用 Ed25519 私钥，Global API 保存公钥和批准状态，Broker 按公钥验签。
+状态：Nexus v3 当前设计。Agent 不保存 `NEXUS_API_TOKEN` / `apikey`；每台设备持有 Nexus 专用 Ed25519 私钥，Registry 保存公钥和批准状态，Broker 按公钥验签。
 
 ## 本机存储
 
 | 平台 | 私钥 | 公钥 | 配置 |
 |---|---|---|---|
-| Linux/systemd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/config.json` |
-| OpenWrt/procd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/config.env`；签名辅助脚本 `/opt/nexus-agent/openwrt_ed25519_signer.rb` |
-| Windows/Scheduled Task | `C:\ProgramData\NexusAgent\identity_ed25519` | `C:\ProgramData\NexusAgent\identity_ed25519.pub` | `C:\ProgramData\NexusAgent\config.json` |
+| Linux/systemd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/v3.json` |
+| OpenWrt/procd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/v3.env`；签名辅助脚本 `/opt/nexus-agent/openwrt_ed25519_signer.rb` |
 
 私钥只在本机，权限限制为 root/SYSTEM/管理员可读。公钥不是 token，不能直接作为凭据；请求必须用私钥签名。
 
@@ -18,16 +17,14 @@ OpenWrt/iStoreOS 上的 OpenSSL 1.1.1 不一定支持 `pkeyutl` Ed25519 signing�
 
 | 用途 | API 地址 | 存储 |
 |---|---|---|
-| 设备注册 | `POST https://nexus-global-api.bings.app/api/device-identities/register` | Oracle `/var/lib/nexus-global-api/device_identities.db` |
-| 待批准列表 | `GET https://nexus-global-api.bings.app/api/admin/device-identities?status=pending` | 同上 |
-| 批准 | `POST https://nexus-global-api.bings.app/api/admin/device-identities/{device_id}/approve` | 同上 |
-| 拒绝 | `POST https://nexus-global-api.bings.app/api/admin/device-identities/{device_id}/reject` | 同上 |
-| 撤销 | `POST https://nexus-global-api.bings.app/api/admin/device-identities/{device_id}/revoke` | 同上 |
-| approved 公钥查询 | `GET https://nexus-global-api.bings.app/api/device-identities/{device_id}/public-key` | 同上 |
-| Agent 心跳 | `POST https://nexus-global-api.bings.app/api/devices/heartbeat` | Global API 写 Supabase `public.devices` 镜像 |
-| Broker 领取 | `GET {regional_broker}/claim?...` | Broker 热队列；公钥从 `https://nexus-global-api.bings.app` 查询并短 TTL 缓存 |
-| Broker 回执 | `POST {regional_broker}/complete` | Broker job store；异步镜像任务结果 |
-| Supabase 目录镜像 | `https://iyqzgmzlykufsbtmykpw.supabase.co/rest/v1/device_identities` | 非权威审计/目录镜像 |
+| 设备注册 | `POST {registry}/v3/devices/register` | `/var/lib/nexus-v3/registry.db` |
+| 待批准列表 | `GET {registry}/v3/admin/devices?status=pending` | 同上 |
+| 批准 | `POST {registry}/v3/admin/devices/{device_id}/approve` | 同上 |
+| 拒绝 | `POST {registry}/v3/admin/devices/{device_id}/reject` | 同上 |
+| 撤销 | `POST {registry}/v3/admin/devices/{device_id}/revoke` | 同上 |
+| approved 公钥查询 | `GET {registry}/v3/devices/{device_id}/public-key` | 同上 |
+| Broker 领取 | `GET {regional_broker}/v3/jobs/claim?...` | `/var/lib/nexus-v3/broker.db` |
+| Broker 回执 | `POST {regional_broker}/v3/jobs/complete` | 同上 |
 
 ## 签名头
 
@@ -42,7 +39,7 @@ X-Nexus-Signature: <base64url-ed25519-signature>
 签名输入：
 
 ```text
-NEXUS-ED25519-V1
+NEXUS-V3-ED25519
 <HTTP_METHOD_UPPERCASE>
 <PATH_AND_QUERY>
 <X-Nexus-Timestamp>

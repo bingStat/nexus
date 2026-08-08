@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from nexus_v3 import agent as v3_agent
 from nexus_v3.common import Identity, verify_http_signature, verify_registration_payload
+from nexus_v3.registry import SSH_PUBLIC_KEY_RE
 
 
 def test_v3_registration_and_http_signature_round_trip() -> None:
@@ -13,7 +16,7 @@ def test_v3_registration_and_http_signature_round_trip() -> None:
         private_key = Path(tmp) / "identity_ed25519"
         public_key = Path(tmp) / "identity_ed25519.pub"
         identity = Identity(private_key, public_key)
-        registration = identity.registration_payload("n1", "openwrt", "openwrt", "3.0.1-test")
+        registration = identity.registration_payload("n1", "openwrt", "openwrt", "3.0.1-test", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest nexus-n1")
 
         verify_registration_payload(registration)
 
@@ -23,6 +26,7 @@ def test_v3_registration_and_http_signature_round_trip() -> None:
 
         assert device_id == "n1"
         assert registration["key_id"] == identity.key_id
+        assert registration["ssh_public_key"].startswith("ssh-ed25519 ")
 
 
 def test_v3_rejects_stale_signature_timestamp() -> None:
@@ -36,10 +40,28 @@ def test_v3_rejects_stale_signature_timestamp() -> None:
             verify_http_signature(identity.public_key_pem, headers, "GET", "/v3/jobs/claim", body)
 
 
+def test_agent_command_argv_uses_platform_shell() -> None:
+    assert v3_agent.command_argv("echo ok") == ["/bin/sh", "-c", "echo ok"]
+
+    with mock.patch.object(v3_agent.os, "name", "nt"):
+        with mock.patch.dict(v3_agent.os.environ, {}, clear=False):
+            v3_agent.os.environ.pop("NEXUS_WINDOWS_SHELL", None)
+            assert v3_agent.command_argv("Write-Output ok") == [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "Write-Output ok",
+            ]
+
+        with mock.patch.dict(v3_agent.os.environ, {"NEXUS_WINDOWS_SHELL": "cmd"}, clear=False):
+            assert v3_agent.command_argv("echo ok") == ["cmd.exe", "/d", "/s", "/c", "echo ok"]
+
+
 def test_v3_installers_are_separate_from_legacy_services() -> None:
     root = Path(__file__).resolve().parents[1]
-    linux = (root / "install-v3.sh").read_text(encoding="utf-8")
-    openwrt = (root / "install-openwrt-v3.sh").read_text(encoding="utf-8")
+    installer = (root / "install.sh").read_text(encoding="utf-8")
     agent = (root / "openwrt_v3_agent.sh").read_text(encoding="utf-8")
     python_agent = (root / "nexus_v3" / "agent.py").read_text(encoding="utf-8")
     broker = (root / "nexus_v3" / "broker.py").read_text(encoding="utf-8")
@@ -47,11 +69,29 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "/v3/devices/register" in agent
     assert "/v3/jobs/claim" in agent
     assert "/v3/jobs/complete" in agent
-    assert "nexus-v3-agent.service" in linux
-    assert "nexus-v3-agent" in openwrt
+    assert "nexus-v3-agent.service" in installer
+    assert "install_openwrt_agent" in installer
+    assert "openwrt-agent" in installer
+    assert "cleanup_legacy" in installer
+    assert "sync_ssh_authorized_keys.sh" in installer
+    assert "sync-cluster-ssh" in installer
+    assert "trigger_cluster_ssh_sync" in installer
+    assert "ssh_ed25519" in installer
+    assert "OnUnitActiveSec" not in installer
+    assert "*/5 * * * * /opt/nexus-agent/sync_ssh_authorized_keys.sh" not in installer
     assert "/api/devices/heartbeat" not in agent
     assert '"$BROKER_URL/claim' not in agent
     assert "require_success" in python_agent
     assert "subprocess.TimeoutExpired" in python_agent
     assert "ReplayGuard" in broker
     assert "signature nonce already used" in broker
+
+
+def test_ssh_public_key_contract() -> None:
+    assert SSH_PUBLIC_KEY_RE.match("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest nexus-test")
+    root = Path(__file__).resolve().parents[1]
+    registry = (root / "nexus_v3" / "registry.py").read_text(encoding="utf-8")
+    installer = (root / "install.sh").read_text(encoding="utf-8")
+    assert "/v3/ssh/authorized-keys" in registry
+    assert "BEGIN NEXUS MANAGED SSH KEYS" in installer
+    assert "authorized_keys" in installer

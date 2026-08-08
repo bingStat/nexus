@@ -11,6 +11,7 @@ REGISTRY_URL="$(printf '%s' "${NEXUS_V3_REGISTRY_URL:-}" | sed 's:/*$::')"
 BROKER_URL="$(printf '%s' "${NEXUS_V3_BROKER_URL:-}" | sed 's:/*$::')"
 IDENTITY_KEY="${NEXUS_IDENTITY_KEY:-/etc/nexus-agent/identity_ed25519}"
 IDENTITY_PUB="${NEXUS_IDENTITY_PUBLIC_KEY:-/etc/nexus-agent/identity_ed25519.pub}"
+SSH_PUB="${NEXUS_SSH_PUBLIC_KEY:-/etc/nexus-agent/ssh_ed25519.pub}"
 ED25519_SIGNER="${NEXUS_ED25519_SIGNER:-/opt/nexus-agent/openwrt_ed25519_signer.rb}"
 RUN_DIR="${NEXUS_RUN_DIR:-/var/run/nexus-v3-agent}"
 LOCK_DIR="${NEXUS_LOCK_DIR:-/var/run/nexus-v3-agent.lock}"
@@ -86,12 +87,19 @@ signed_headers() {
 
 register_device() {
   pub_json="$(json_escape < "$IDENTITY_PUB")"
+  ssh_pub_json=""
+  [ -r "$SSH_PUB" ] && ssh_pub_json="$(json_escape < "$SSH_PUB")"
   base="$RUN_DIR/register-base.json"
   proof_msg="$RUN_DIR/register-proof.msg"
   proof_sig="$RUN_DIR/register-proof.sig"
   payload="$RUN_DIR/register.json"
-  printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s"}' \
-    "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" > "$base"
+  if [ -n "$ssh_pub_json" ]; then
+    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s","ssh_public_key":"%s"}' \
+      "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" "$ssh_pub_json" > "$base"
+  else
+    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s"}' \
+      "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" > "$base"
+  fi
   { printf 'NEXUS-V3-REGISTER\n'; sha256_file "$base" | tr -d '\n'; } > "$proof_msg"
   sign_file "$proof_msg" "$proof_sig"
   proof="$(b64url_file "$proof_sig")"

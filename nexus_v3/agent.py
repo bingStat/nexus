@@ -47,6 +47,15 @@ def require_success(code: int, payload: dict | None, operation: str, expected: s
     raise RuntimeError(f"{operation} failed: HTTP {code}: {detail or 'unexpected response'}")
 
 
+def command_argv(command: str) -> list[str]:
+    if os.name == "nt":
+        shell = os.getenv("NEXUS_WINDOWS_SHELL", "powershell").strip().lower()
+        if shell in {"cmd", "cmd.exe"}:
+            return ["cmd.exe", "/d", "/s", "/c", command]
+        return ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
+    return ["/bin/sh", "-c", command]
+
+
 def main() -> None:
     config = load_config()
     device_id = str(config["device_id"]).strip().lower()
@@ -58,7 +67,13 @@ def main() -> None:
     )
     agent_id = f"{device_id}:{socket.gethostname()}:{os.getpid()}"
 
-    registration = identity.registration_payload(device_id, socket.gethostname(), platform.platform(), VERSION)
+    ssh_public_key = ""
+    ssh_public_key_path = config.get("ssh_public_key")
+    if ssh_public_key_path:
+        path = Path(str(ssh_public_key_path))
+        if path.exists():
+            ssh_public_key = path.read_text(encoding="utf-8").strip()
+    registration = identity.registration_payload(device_id, socket.gethostname(), platform.platform(), VERSION, ssh_public_key)
     response = requests.post(f"{registry}/v3/devices/register", json=registration, timeout=20)
     registration_payload = response.json() if response.text else {}
     require_success(response.status_code, registration_payload, "device registration", {200, 201, 202})
@@ -95,7 +110,7 @@ def main() -> None:
 def execute_and_complete(config: dict, identity: Identity, device_id: str, broker: str, job: dict) -> None:
     timeout = max(1, int(job.get("timeout_ms") or 30000) // 1000)
     try:
-        proc = subprocess.run(["/bin/sh", "-c", str(job["command"])], text=True, capture_output=True, timeout=timeout)
+        proc = subprocess.run(command_argv(str(job["command"])), text=True, capture_output=True, timeout=timeout)
         status = "completed" if proc.returncode == 0 else "failed"
         exit_code = proc.returncode
         output = (proc.stdout + proc.stderr)[-20000:]

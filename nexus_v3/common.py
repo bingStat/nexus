@@ -98,7 +98,14 @@ class Identity:
             "X-Nexus-Signature": b64url(signature),
         }
 
-    def registration_payload(self, device_id: str, hostname: str, platform: str, agent_version: str) -> dict[str, Any]:
+    def registration_payload(
+        self,
+        device_id: str,
+        hostname: str,
+        platform: str,
+        agent_version: str,
+        ssh_public_key: str | None = None,
+    ) -> dict[str, Any]:
         payload = {
             "device_id": device_id,
             "public_key_ed25519": self.public_key_pem,
@@ -107,6 +114,8 @@ class Identity:
             "platform": platform,
             "agent_version": agent_version,
         }
+        if ssh_public_key:
+            payload["ssh_public_key"] = ssh_public_key.strip()
         payload["proof"] = b64url(self.private_key.sign(canonical_registration_message(payload)))
         return payload
 

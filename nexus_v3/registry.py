@@ -14,6 +14,7 @@ from .common import json_dumps, read_json, utc_now, verify_registration_payload
 
 VERSION = "3.0.0"
 DEVICE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
+SSH_PUBLIC_KEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/=]+(?: .*)?$")
 
 
 class RegistryStore:
@@ -27,6 +28,7 @@ class RegistryStore:
                     device_id TEXT PRIMARY KEY,
                     key_id TEXT NOT NULL,
                     public_key_ed25519 TEXT NOT NULL,
+                    ssh_public_key TEXT NOT NULL DEFAULT '',
                     hostname TEXT NOT NULL,
                     platform TEXT NOT NULL,
                     agent_version TEXT NOT NULL,
@@ -37,6 +39,7 @@ class RegistryStore:
                 )
                 """
             )
+            self._ensure_column(db, "devices", "ssh_public_key", "TEXT NOT NULL DEFAULT ''")
             db.commit()
 
     def connect(self) -> sqlite3.Connection:
@@ -44,11 +47,19 @@ class RegistryStore:
         db.row_factory = sqlite3.Row
         return db
 
+    def _ensure_column(self, db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in columns:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
     def register(self, payload: dict[str, Any]) -> dict[str, Any]:
         device_id = str(payload.get("device_id") or "").strip().lower()
         if not DEVICE_RE.match(device_id):
             raise ValueError("invalid device_id")
         verify_registration_payload(payload)
+        ssh_public_key = str(payload.get("ssh_public_key") or "").strip()
+        if ssh_public_key and not SSH_PUBLIC_KEY_RE.match(ssh_public_key):
+            raise ValueError("invalid ssh_public_key")
         now = utc_now()
         with self.connect() as db:
             row = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
@@ -59,11 +70,12 @@ class RegistryStore:
                 approved_at = row["approved_at"]
             db.execute(
                 """
-                INSERT INTO devices(device_id,key_id,public_key_ed25519,hostname,platform,agent_version,status,created_at,updated_at,approved_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO devices(device_id,key_id,public_key_ed25519,ssh_public_key,hostname,platform,agent_version,status,created_at,updated_at,approved_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(device_id) DO UPDATE SET
                   key_id=excluded.key_id,
                   public_key_ed25519=excluded.public_key_ed25519,
+                  ssh_public_key=excluded.ssh_public_key,
                   hostname=excluded.hostname,
                   platform=excluded.platform,
                   agent_version=excluded.agent_version,
@@ -75,6 +87,7 @@ class RegistryStore:
                     device_id,
                     payload["key_id"],
                     payload["public_key_ed25519"],
+                    ssh_public_key,
                     str(payload.get("hostname") or ""),
                     str(payload.get("platform") or ""),
                     str(payload.get("agent_version") or ""),
@@ -88,7 +101,7 @@ class RegistryStore:
             return self.get(device_id, include_key=False) | {"status": status}
 
     def list(self, status: str | None = None) -> list[dict[str, Any]]:
-        sql = "SELECT device_id,key_id,hostname,platform,agent_version,status,created_at,updated_at,approved_at FROM devices"
+        sql = "SELECT device_id,key_id,ssh_public_key,hostname,platform,agent_version,status,created_at,updated_at,approved_at FROM devices"
         args: tuple[str, ...] = ()
         if status:
             sql += " WHERE status=?"
@@ -98,7 +111,7 @@ class RegistryStore:
             return [dict(row) for row in db.execute(sql, args).fetchall()]
 
     def get(self, device_id: str, include_key: bool = True) -> dict[str, Any]:
-        cols = "device_id,key_id,hostname,platform,agent_version,status,created_at,updated_at,approved_at"
+        cols = "device_id,key_id,ssh_public_key,hostname,platform,agent_version,status,created_at,updated_at,approved_at"
         if include_key:
             cols += ",public_key_ed25519"
         with self.connect() as db:
@@ -116,6 +129,13 @@ class RegistryStore:
                 raise KeyError(device_id)
             db.commit()
         return self.get(device_id, include_key=False)
+
+    def authorized_ssh_keys(self) -> list[dict[str, str]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT device_id,ssh_public_key FROM devices WHERE status='approved' AND ssh_public_key<>'' ORDER BY device_id"
+            ).fetchall()
+            return [dict(row) for row in rows]
 
 
 def auth_admin(handler: BaseHTTPRequestHandler) -> None:
@@ -141,11 +161,26 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_text(self, code: int, text: str) -> None:
+        body = text.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         try:
             if parsed.path == "/v3/health":
                 return self.send_json(200, {"status": "ok", "service": "nexus-v3-registry", "version": VERSION})
+            if parsed.path == "/v3/ssh/authorized-keys":
+                lines = []
+                for row in self.store.authorized_ssh_keys():
+                    key = row["ssh_public_key"].split(None, 2)[:2]
+                    if len(key) == 2:
+                        lines.append(f"{key[0]} {key[1]} nexus-device={row['device_id']}")
+                return self.send_text(200, "\n".join(lines) + ("\n" if lines else ""))
             if parsed.path == "/v3/admin/devices":
                 auth_admin(self)
                 query = dict(item.split("=", 1) for item in parsed.query.split("&") if "=" in item)
