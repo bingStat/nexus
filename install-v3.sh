@@ -86,6 +86,10 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+systemctl stop nexus-v3-agent.service >/dev/null 2>&1 || true
+ps w 2>/dev/null | awk '/[p]ython.*-m nexus_v3\.agent/ {print $1}' | while read -r pid; do
+  [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+done
 systemctl daemon-reload
 systemctl enable nexus-v3-agent.service >/dev/null
 systemctl restart nexus-v3-agent.service
