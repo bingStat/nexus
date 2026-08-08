@@ -8,7 +8,7 @@
 2. Action Schema：复制“远程控制 Action JSON”代码块。
 3. Authentication：选择 Bearer token，填入 `oracle:/etc/nexus-chatgpt-remote.env` 中的 `NEXUS_CHATGPT_API_KEY`。
 
-不要把 token、私钥、cookie、Bitwarden 机密值或浏览器会话写进 Instructions、Action JSON、GitHub 或聊天记录。
+安全规则：`NEXUS_CHATGPT_API_KEY` 不写入提示词、Action JSON、GitHub 或聊天记录；只放在 ChatGPT Action 的受保护 Authentication 设置里。
 
 ## Action 入口
 
@@ -81,7 +81,7 @@ VSC 可能位于 HPC 环境，Tailscale 以用户态方式运行。入站 SSH �
 - 目标：设备 ID 与关键路径。
 - 证据：`job_id`、`status`、`exit_code`、`broker_region`、关键输出。
 - 变更：实际改动了什么；只读任务写“无”。
-- 风险：剩余问题或需要用户确认的下一步。
+- 计划：剩余问题或需要用户确认的下一步。
 ```
 
 ## 远程控制 Action JSON
