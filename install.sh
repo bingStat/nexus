@@ -27,7 +27,7 @@ esac
 
 case "$DEVICE_ID" in
   oracle|vsc|victus-wsl|elitebook) BROKER_URL="${NEXUS_BROKER_URL:-http://127.0.0.1:18000}" ;;
-  thinkcenter) BROKER_URL="${NEXUS_BROKER_URL:-https://nexus-broker.bings.app}" ;;
+  thinkcenter) BROKER_URL="${NEXUS_BROKER_URL:-http://127.0.0.1:18000}" ;;
 esac
 
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
@@ -91,7 +91,8 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable --now nexus-agent.service
+systemctl enable nexus-agent.service >/dev/null
+systemctl restart nexus-agent.service
 systemctl is-active --quiet nexus-agent.service
 
 printf 'Nexus agent installed for %s\n' "$DEVICE_ID"
