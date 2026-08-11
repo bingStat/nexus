@@ -1,0 +1,11 @@
+[Unit]
+Description=Evaluate Nexus alerts every three minutes
+
+[Timer]
+OnBootSec=2min 45s
+OnUnitActiveSec=3min
+AccuracySec=20s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

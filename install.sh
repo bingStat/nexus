@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394}"
+SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/main}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PYTHON="${PYTHON:-python3}"
 
@@ -316,12 +316,7 @@ install_agent() {
   [ -n "$device_id" ] || fail "agent mode requires canonical device id"
   case "$device_id" in
     n1|ax3600)
-      if [ -f /etc/openwrt_release ]; then
-        install_openwrt_agent "$device_id"
-        return 0
-      fi
-      printf '%s is not running OpenWrt here; configure it as a ThinkCenter-managed target with: install.sh managed-targets\n' "$device_id"
-      return 0
+      fail "$device_id requires: install.sh openwrt-agent $device_id on that OpenWrt device"
       ;;
   esac
 
@@ -342,7 +337,25 @@ install_agent() {
   ssh_pub="$identity_pub"
   mkdir -p "$install_dir" "$config_dir"
   chmod 700 "$config_dir"
-  install_python_package "$install_dir" __init__.py common.py agent.py
+  install_python_package "$install_dir" __init__.py common.py agent.py devspace_runtime.py ledger.py
+
+  devspace_bridge=""
+  devspace_roots="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-}"
+  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    node_version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+    node_major="$(printf '%s' "$node_version" | cut -d. -f1)"
+    node_minor="$(printf '%s' "$node_version" | cut -d. -f2)"
+    if [ "${node_major:-0}" -gt 22 ] || { [ "${node_major:-0}" -eq 22 ] && [ "${node_minor:-0}" -ge 19 ]; }; then
+      runtime_dir="$install_dir/devspace-runtime"
+      mkdir -p "$runtime_dir"
+      copy_or_fetch runtime/devspace/package.json "$runtime_dir/package.json"
+      copy_or_fetch runtime/devspace/package-lock.json "$runtime_dir/package-lock.json"
+      copy_or_fetch runtime/devspace/bridge.mjs "$runtime_dir/bridge.mjs"
+      (cd "$runtime_dir" && npm ci --omit=dev --no-audit --no-fund >/dev/null && node ./bridge.mjs --self-test >/dev/null)
+      devspace_bridge="$runtime_dir/bridge.mjs"
+      [ -n "$devspace_roots" ] || { [ -d /home ] && devspace_roots=/home || true; }
+    fi
+  fi
 
   "$PYTHON" - <<PY
 import json
@@ -358,7 +371,12 @@ config = {
     "wait_seconds": 20,
     "poll_seconds": 1,
     "request_timeout": 35,
+    "execution_ledger": "$config_dir/execution-ledger.db",
 }
+bridge = "$devspace_bridge"
+roots = [item for item in "$devspace_roots".split(":") if item]
+if bridge and roots:
+    config["devspace"] = {"bridge": bridge, "allowed_roots": roots, "state_dir": "$config_dir/devspace-state"}
 Path("$config_file").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 PY
   chmod 600 "$config_file"
@@ -409,7 +427,7 @@ install_remote() {
   env_file="${NEXUS_CHATGPT_ENV_FILE:-/etc/nexus-chatgpt-remote.env}"
   v3_env="${NEXUS_V3_ENV_FILE:-/etc/nexus-v3.env}"
   mkdir -p "$install_dir/assets"
-  install_python_package "$install_dir" __init__.py common.py remote_control.py mcp_server.py chatgpt_api.py
+  install_python_package "$install_dir" __init__.py common.py status.py remote_control.py mcp_server.py chatgpt_api.py
   copy_or_fetch "agent-council/integrations/nexus-v3-remote-control-openapi.json" "$install_dir/assets/openapi.template.json"
   copy_or_fetch "agent-council/integrations/nexus-v3-chatgpt-remote-prompt.md" "$install_dir/assets/chatgpt-prompt.md"
 
@@ -483,105 +501,39 @@ EOF
   printf 'Nexus ChatGPT Remote installed. OpenAPI: http://%s:%s/openapi.json\n' "${NEXUS_CHATGPT_BIND:-127.0.0.1}" "${NEXUS_CHATGPT_PORT:-18131}"
 }
 
-install_managed_targets() {
+install_ops() {
   need_root
-  dir="${NEXUS_MANAGED_TARGETS_DIR:-/etc/nexus-managed-targets}"
-  mkdir -p "$dir"
-  chmod 700 "$dir"
-  cat > "$dir/targets.env" <<EOF
-NEXUS_N1_SSH=${NEXUS_N1_SSH:-root@100.90.67.12}
-NEXUS_AX3600_SSH=${NEXUS_AX3600_SSH:-root@192.168.1.1}
-EOF
-  chmod 600 "$dir/targets.env"
-  printf 'Managed targets configured on ThinkCenter: %s\n' "$dir/targets.env"
-}
-
-cleanup_legacy() {
-  need_root
-  stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
-  backup_dir="/opt/nexus-bak/legacy-$stamp"
-  mkdir -p "$backup_dir"
-
-  if command -v systemctl >/dev/null 2>&1; then
-    for service in nexus-agent.service nexus-mcp.service nexus-openwrt-agent.service; do
-      systemctl disable --now "$service" >/dev/null 2>&1 || true
-    done
-    systemctl daemon-reload >/dev/null 2>&1 || true
-  fi
-
-  if [ -x /etc/init.d/nexus-agent ]; then
-    /etc/init.d/nexus-agent stop >/dev/null 2>&1 || true
-    /etc/init.d/nexus-agent disable >/dev/null 2>&1 || true
-  fi
-
-  move_legacy_path() {
-    src="$1"
-    [ -e "$src" ] || return 0
-    dst="$backup_dir$(printf '%s' "$src")"
-    mkdir -p "$(dirname "$dst")"
-    mv "$src" "$dst"
-  }
-
-  for path in \
-    /etc/systemd/system/nexus-agent.service \
-    /etc/systemd/system/nexus-mcp.service \
-    /etc/systemd/system/nexus-openwrt-agent.service \
-    /etc/systemd/system/nexus-ssh-authorized-keys.timer \
-    /etc/init.d/nexus-agent \
-    /etc/nexus-agent/config.json \
-    /etc/nexus-agent/config.env \
-    /etc/nexus-agent/token \
-    /opt/nexus-mcp \
-    /opt/nexus-agent/agent.py \
-    /opt/nexus-agent/unix_agent.py \
-    /opt/nexus-agent/windows_agent.py \
-    /opt/nexus-agent/openwrt_agent.sh \
-    /opt/nexus-agent/nexus_agent.sh \
-    /opt/nexus-agent/agent.sh; do
-    move_legacy_path "$path"
-  done
-
-  if [ -f /etc/crontabs/root ]; then
-    tmp="/tmp/nexus-crontab-clean.$$"
-    grep -v '/opt/nexus-agent/sync_ssh_authorized_keys.sh' /etc/crontabs/root > "$tmp" || true
-    mv "$tmp" /etc/crontabs/root
-    /etc/init.d/cron restart >/dev/null 2>&1 || true
-  fi
-
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl daemon-reload >/dev/null 2>&1 || true
-  fi
-  printf 'Legacy Nexus files moved to %s\n' "$backup_dir"
+  tmp="/tmp/nexus-ops-install.$$"
+  copy_or_fetch ops/install.sh "$tmp"
+  chmod 755 "$tmp"
+  NEXUS_SOURCE_BASE="$SOURCE_BASE" sh "$tmp"
+  rm -f "$tmp"
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  install.sh cleanup
+  install.sh registry
+  install.sh broker <eu|cn>
+  install.sh agent <canonical-device-id>
+  install.sh openwrt-agent <n1|ax3600>
+  install.sh remote
+  install.sh ops
   install.sh sync-ssh-keys
   install.sh sync-cluster-ssh
-  install.sh registry
-  install.sh broker [eu|cn]
-  install.sh agent <canonical-device-id>
-  install.sh <canonical-device-id>
-  install.sh remote
-  install.sh managed-targets
-
-n1 and ax3600 self-claim jobs when they can run the OpenWrt agent; otherwise configure ThinkCenter-managed SSH fallback.
 EOF
 }
 
 cmd="${1:-}"
 case "$cmd" in
-  cleanup) cleanup_legacy ;;
-  sync-ssh-keys) sync_ssh_keys ;;
-  sync-cluster-ssh) sync_cluster_ssh ;;
   registry) install_registry ;;
   broker) shift; install_broker "${1:-}" ;;
   agent) shift; install_agent "${1:-}" ;;
   openwrt-agent) shift; install_openwrt_agent "${1:-}" ;;
-  remote|chatgpt-remote) install_remote ;;
-  managed-targets) install_managed_targets ;;
+  remote) install_remote ;;
+  ops) install_ops ;;
+  sync-ssh-keys) sync_ssh_keys ;;
+  sync-cluster-ssh) sync_cluster_ssh ;;
   ""|-h|--help|help) usage ;;
-  *) install_agent "$cmd" ;;
+  *) usage; fail "unknown installer command: $cmd" ;;
 esac

@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus v3 Cluster Dashboard</title>
     <meta name="description" content="Nexus v3 设备控制面板 — Ed25519 身份、Oracle Registry、区域 Broker 与 Agent 状态。">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
+            --font-sf-display: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             --bg: #060a14;
             --surface: rgba(12, 20, 40, 0.8);
             --surface2: rgba(20, 30, 60, 0.5);
@@ -28,7 +28,7 @@
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font-sf-display);
             background: var(--bg);
             background-image:
                 radial-gradient(ellipse at 10% 20%, rgba(79,142,255,0.1) 0%, transparent 55%),
@@ -65,17 +65,17 @@
             background: linear-gradient(90deg, #fff 30%, var(--blue));
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
-        .tagline { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--muted); letter-spacing: 1px; }
+        .tagline { font-family: var(--font-sf-display); font-size: 0.6rem; color: var(--muted); letter-spacing: 1px; }
         .header-right { display: flex; align-items: center; gap: 1.2rem; }
         .live-badge {
             display: flex; align-items: center; gap: 0.4rem;
             background: rgba(16,217,138,0.1); border: 1px solid rgba(16,217,138,0.3);
             border-radius: 20px; padding: 0.3rem 0.8rem;
-            font-size: 0.72rem; color: var(--green); font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem; color: var(--green); font-family: var(--font-sf-display);
         }
         .live-dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; animation: pulse-dot 1.5s infinite; }
         @keyframes pulse-dot { 0%,100%{opacity:1;box-shadow:0 0 6px var(--green);}50%{opacity:.4;box-shadow:none;} }
-        #last-updated { font-size: 0.68rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+        #last-updated { font-size: 0.68rem; color: var(--muted); font-family: var(--font-sf-display); }
 
         /* ─── STATS BAR (single row, compact) ─── */
         .stats-bar {
@@ -96,7 +96,7 @@
             flex-shrink: 0;
         }
         .stat-pill-icon { font-size: 1rem; }
-        .stat-pill-val { font-family: 'JetBrains Mono', monospace; font-size: 1rem; font-weight: 700; }
+        .stat-pill-val { font-family: var(--font-sf-display); font-size: 1rem; font-weight: 700; }
         .stat-pill-lbl { font-size: 0.62rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
 
         /* ─── MAIN LAYOUT ─── */
@@ -122,7 +122,7 @@
         }
         #topo-badge {
             position: absolute; top: 0.9rem; right: 1.4rem;
-            font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+            font-family: var(--font-sf-display); font-size: 0.65rem;
             background: rgba(34,211,238,0.1); color: var(--cyan);
             border: 1px solid rgba(34,211,238,0.2); border-radius: 8px;
             padding: 0.2rem 0.6rem; z-index: 5;
@@ -134,7 +134,7 @@
             z-index: 6;
         }
         .topo-action-btn {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-sf-display);
             font-size: 0.58rem;
             padding: 0.28rem 0.55rem;
             border-radius: 8px;
@@ -239,7 +239,7 @@
         /* Service tag chips on topology */
         .svc-chip {
             position: absolute;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-sf-display);
             font-size: 8px;
             font-weight: 700;
             letter-spacing: 0.3px;
@@ -264,7 +264,7 @@
             left: 1.4rem;
             bottom: 1rem;
             z-index: 5;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-sf-display);
             font-size: 0.62rem;
             color: var(--muted);
             background: rgba(6,10,20,0.72);
@@ -306,7 +306,7 @@
             flex-shrink: 0;
         }
         .panel-title { font-size: 0.65rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
-        .panel-badge { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; padding: 0.15rem 0.5rem; border-radius: 6px; }
+        .panel-badge { font-family: var(--font-sf-display); font-size: 0.6rem; padding: 0.15rem 0.5rem; border-radius: 6px; }
 
         /* Device list (compact) */
         .device-list { padding: 0.5rem; overflow-y: auto; max-height: 280px; }
@@ -336,8 +336,8 @@
         .device-status-ring.unknown { border-color: var(--muted); opacity: 0.7; }
         .device-info { flex: 1; min-width: 0; }
         .device-name { font-weight: 600; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .device-meta { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .device-pill { font-size: 0.58rem; padding: 0.15rem 0.45rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; flex-shrink: 0; }
+        .device-meta { font-family: var(--font-sf-display); font-size: 0.6rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .device-pill { font-size: 0.58rem; padding: 0.15rem 0.45rem; border-radius: 8px; font-family: var(--font-sf-display); font-weight: 700; flex-shrink: 0; }
         .pill-online { background: rgba(16,217,138,0.15); color: var(--green); border: 1px solid rgba(16,217,138,0.3); }
         .pill-offline { background: rgba(255,77,109,0.1); color: var(--red); border: 1px solid rgba(255,77,109,0.2); }
         .pill-degraded { background: rgba(245,166,35,0.12); color: var(--orange); border: 1px solid rgba(245,166,35,0.26); }
@@ -366,7 +366,7 @@
         }
         .service-detail-name { font-size: 0.82rem; font-weight: 700; }
         .service-detail-role {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-sf-display);
             font-size: 0.58rem;
             color: var(--muted);
         }
@@ -380,7 +380,7 @@
             border-radius: 8px;
             padding: 0.42rem 0.5rem;
             background: var(--surface2);
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-sf-display);
             font-size: 0.62rem;
             color: var(--text);
             overflow: hidden;
@@ -393,7 +393,7 @@
         .console-area { padding: 0.7rem; }
         .console-row { display: flex; gap: 0.6rem; margin-bottom: 0.6rem; }
         select, input, button {
-            font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+            font-family: var(--font-sf-display); font-size: 0.72rem;
             background: rgba(0,0,0,0.4); border: 1px solid var(--border);
             color: var(--text); border-radius: 7px; padding: 0.45rem 0.7rem;
             outline: none; transition: all 0.2s;
@@ -410,7 +410,7 @@
         .console-output {
             background: rgba(0,0,0,0.5); border: 1px solid var(--border);
             border-radius: 8px; padding: 0.7rem;
-            font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+            font-family: var(--font-sf-display); font-size: 0.68rem;
             color: var(--green); min-height: 60px; max-height: 120px;
             overflow-y: auto; white-space: pre-wrap; word-break: break-all;
         }
@@ -434,11 +434,11 @@
         .task-entry.pending   { border-left-color: var(--orange); }
         .task-entry.failed    { border-left-color: var(--red); }
         .task-status-icon { font-size: 0.85rem; margin-top: 0.05rem; }
-        .task-device { font-size: 0.58rem; font-family: 'JetBrains Mono', monospace; color: var(--blue); font-weight: 700; }
-        .task-cmd { font-family: 'JetBrains Mono', monospace; font-size: 0.67rem; color: var(--text); margin: 0.1rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .task-time { font-size: 0.58rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+        .task-device { font-size: 0.58rem; font-family: var(--font-sf-display); color: var(--blue); font-weight: 700; }
+        .task-cmd { font-family: var(--font-sf-display); font-size: 0.67rem; color: var(--text); margin: 0.1rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .task-time { font-size: 0.58rem; color: var(--muted); font-family: var(--font-sf-display); white-space: nowrap; }
         .task-output {
-            grid-column: 1/-1; font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+            grid-column: 1/-1; font-family: var(--font-sf-display); font-size: 0.62rem;
             color: var(--green); background: rgba(0,0,0,0.3);
             padding: 0.4rem 0.6rem; border-radius: 5px; margin-top: 0.2rem;
             max-height: 60px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
@@ -592,7 +592,7 @@ const DEVICE_META = {
     victus:      { icon: '🐧', os: 'WSL2', role: 'EU workstation target', location: 'Leuven' },
 };
 const DEVICE_SORT_ORDER = ['oracle', 'thinkcenter', 'n1', 'ax3600', 'vsc', 'victus'];
-const STATIC_UPDATED_AT = '2026-08-08 19:56 Europe/Brussels';
+const STATIC_UPDATED_AT = '2026-08-09 01:31 Europe/Brussels';
 // ─── FETCH ───
 function isoMinutesAgo(mins) { return new Date(Date.now() - mins * 60000).toISOString(); }
 
@@ -982,7 +982,7 @@ function renderTopology(devices) {
         el.setAttribute('x', x); el.setAttribute('y', y);
         el.setAttribute('text-anchor', anchor || 'middle');
         el.setAttribute('fill', fill); el.setAttribute('font-size', size || '9');
-        el.setAttribute('font-family', 'JetBrains Mono, monospace');
+        el.setAttribute('font-family', '"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif');
         el.setAttribute('font-weight', '700');
         if (rotate) el.setAttribute('transform', `rotate(${rotate}, ${x}, ${y})`);
         el.textContent = txt;
@@ -1031,7 +1031,7 @@ function renderTopology(devices) {
         lbl.setAttribute('text-anchor', 'middle');
         lbl.setAttribute('fill', hub.color);
         lbl.setAttribute('font-size', '8');
-        lbl.setAttribute('font-family', 'JetBrains Mono, monospace');
+        lbl.setAttribute('font-family', '"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif');
         lbl.setAttribute('font-weight', '700');
         lbl.setAttribute('letter-spacing', '1');
         lbl.textContent = hub.label.toUpperCase();

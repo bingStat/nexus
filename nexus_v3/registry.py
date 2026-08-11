@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 import re
@@ -44,10 +45,14 @@ class RegistryStore:
             self._ensure_column(db, "devices", "capabilities_json", "TEXT NOT NULL DEFAULT '{}'")
             db.commit()
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self):
         db = sqlite3.connect(self.db_path)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            yield db
+        finally:
+            db.close()
 
     def _ensure_column(self, db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
         columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}

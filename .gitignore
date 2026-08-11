@@ -9,3 +9,8 @@ zone_audit.json
 .playwright-mcp/
 backups/
 artifacts/
+node_modules/
+.ai/
+.bak/
+.pytest_cache/
+.venv/

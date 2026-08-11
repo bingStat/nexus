@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 import sqlite3
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -39,6 +41,9 @@ class BrokerStore:
                     output TEXT NOT NULL DEFAULT '',
                     exit_code INTEGER,
                     lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    attempt INTEGER NOT NULL DEFAULT 0,
+                    idempotency_key TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -47,12 +52,29 @@ class BrokerStore:
             self._ensure_column(db, "operation", "TEXT NOT NULL DEFAULT 'shell.execute'")
             self._ensure_column(db, "input_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(db, "result_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(db, "lease_expires_at", "TEXT")
+            self._ensure_column(db, "attempt", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(db, "idempotency_key", "TEXT NOT NULL DEFAULT ''")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency ON jobs(idempotency_key) WHERE idempotency_key <> ''")
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS agent_presence (
+                    device_id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                )
+                """
+            )
             db.commit()
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self):
         db = sqlite3.connect(self.db_path)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            yield db
+        finally:
+            db.close()
 
     def _ensure_column(self, db: sqlite3.Connection, column: str, definition: str) -> None:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)").fetchall()}
@@ -93,8 +115,18 @@ class BrokerStore:
             raise ValueError("target_device is required")
 
         now = utc_now()
+        job_id = str(payload.get("id") or uuid.uuid4())
+        idempotency_key = str(payload.get("idempotency_key") or job_id)
+        with self.connect() as db:
+            existing = db.execute("SELECT * FROM jobs WHERE id=? OR idempotency_key=? LIMIT 1", (job_id, idempotency_key)).fetchone()
+        if existing:
+            normalized = self.normalize(existing)
+            if normalized.get("target_device") != target or normalized.get("operation") != operation or normalized.get("input") != input_data:
+                raise ValueError("idempotency key conflicts with a different job")
+            return normalized
         job = {
-            "id": str(uuid.uuid4()),
+            "id": job_id,
+            "idempotency_key": idempotency_key,
             "target_device": target,
             "command": command,
             "operation": operation,
@@ -110,10 +142,10 @@ class BrokerStore:
             db.execute(
                 """
                 INSERT INTO jobs(
-                    id,target_device,command,operation,input_json,result_json,
+                    id,idempotency_key,target_device,command,operation,input_json,result_json,
                     timeout_ms,status,output,created_at,updated_at
                 ) VALUES(
-                    :id,:target_device,:command,:operation,:input_json,:result_json,
+                    :id,:idempotency_key,:target_device,:command,:operation,:input_json,:result_json,
                     :timeout_ms,:status,:output,:created_at,:updated_at
                 )
                 """,
@@ -123,9 +155,18 @@ class BrokerStore:
         return self.normalize(job)
 
     def claim(self, device_id: str, lease_owner: str) -> dict[str, Any] | None:
-        now = utc_now()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            stale = db.execute("SELECT id,lease_expires_at FROM jobs WHERE status='running' AND lease_expires_at IS NOT NULL").fetchall()
+            for item in stale:
+                try:
+                    expires = datetime.fromisoformat(str(item["lease_expires_at"]).replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if now_dt >= expires:
+                    db.execute("UPDATE jobs SET status='pending',lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND status='running'", (now, item["id"]))
             row = db.execute(
                 "SELECT * FROM jobs WHERE status='pending' AND target_device=? ORDER BY created_at LIMIT 1",
                 (device_id,),
@@ -133,14 +174,18 @@ class BrokerStore:
             if not row:
                 db.commit()
                 return None
+            lease_seconds = max(90, int(row["timeout_ms"] or 30000) // 1000 + 60)
+            lease_expires = (now_dt + timedelta(seconds=lease_seconds)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
             db.execute(
-                "UPDATE jobs SET status='running', lease_owner=?, updated_at=? WHERE id=?",
-                (lease_owner, now, row["id"]),
+                "UPDATE jobs SET status='running', lease_owner=?, lease_expires_at=?, attempt=attempt+1, updated_at=? WHERE id=?",
+                (lease_owner, lease_expires, now, row["id"]),
             )
             db.commit()
             out = self.normalize(row)
             out["status"] = "running"
             out["lease_owner"] = lease_owner
+            out["lease_expires_at"] = lease_expires
+            out["attempt"] = int(row["attempt"] or 0) + 1
             out["updated_at"] = now
             return out
 
@@ -162,10 +207,12 @@ class BrokerStore:
                 raise KeyError(job_id)
             if row["target_device"] != device_id:
                 raise PermissionError("device cannot complete another device job")
+            if row["status"] in TERMINAL:
+                return self.normalize(row)
             db.execute(
                 """
                 UPDATE jobs
-                SET status=?, output=?, exit_code=?, result_json=?, updated_at=?
+                SET status=?, output=?, exit_code=?, result_json=?, lease_owner=NULL, lease_expires_at=NULL, updated_at=?
                 WHERE id=?
                 """,
                 (
@@ -186,6 +233,32 @@ class BrokerStore:
             if not row:
                 raise KeyError(job_id)
             return self.normalize(row)
+
+    def touch_presence(self, device_id: str, agent_id: str) -> None:
+        now = utc_now()
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO agent_presence(device_id,agent_id,last_seen) VALUES(?,?,?)
+                ON CONFLICT(device_id) DO UPDATE SET
+                  agent_id=excluded.agent_id,last_seen=excluded.last_seen
+                """,
+                (device_id, agent_id, now),
+            )
+            db.commit()
+
+    def list_presence(self) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT device_id,agent_id,last_seen FROM agent_presence ORDER BY last_seen DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+        bounded = max(1, min(int(limit), 200))
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (bounded,)).fetchall()
+        return [self.normalize(row) for row in rows]
 
 
 class ReplayGuard:
@@ -261,15 +334,23 @@ class Handler(BaseHTTPRequestHandler):
                         "region": os.getenv("NEXUS_V3_REGION", "unknown"),
                     },
                 )
+            if parsed.path == "/v3/agents":
+                if not admin_ok(self):
+                    return self.send_json(403, {"error": "admin auth failed"})
+                return self.send_json(200, {"agents": self.store.list_presence()})
             if parsed.path == "/v3/jobs":
                 if not admin_ok(self):
                     return self.send_json(403, {"error": "admin auth failed"})
-                job_id = parse_qs(parsed.query).get("id", [""])[0]
-                return self.send_json(200, self.store.get(job_id))
+                query = parse_qs(parsed.query)
+                job_id = query.get("id", [""])[0]
+                if job_id:
+                    return self.send_json(200, self.store.get(job_id))
+                return self.send_json(200, {"jobs": self.store.list(int(query.get("limit", ["50"])[0] or 50))})
             if parsed.path == "/v3/jobs/claim":
                 device_id = self.signed_device(b"")
                 query = parse_qs(parsed.query)
                 lease_owner = query.get("agent_id", [device_id])[0]
+                self.store.touch_presence(device_id, lease_owner)
                 wait = min(int(query.get("wait", ["20"])[0] or 20), 30)
                 deadline = time.time() + wait
                 while True:

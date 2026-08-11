@@ -37,6 +37,18 @@ def get_device(device_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def fleet_status() -> dict[str, Any]:
+    """Return current runtime status for approved devices and both Regional Brokers."""
+    return remote_control.fleet_status()
+
+
+@mcp.tool()
+def execute_batch(jobs: list[dict[str, Any]], wait_seconds: int = 20) -> dict[str, Any]:
+    """Execute up to 16 shell jobs concurrently; every job must name its target device."""
+    return remote_control.execute_batch(jobs, wait_seconds)
+
+
+@mcp.tool()
 def execute_command(device_id: str, command: str, timeout_ms: int = 30000, wait_seconds: int = 20) -> dict[str, Any]:
     """Execute a shell command on one explicitly named Nexus device."""
     return remote_control.execute_command(device_id, command, timeout_ms, wait_seconds)

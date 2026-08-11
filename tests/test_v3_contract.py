@@ -42,7 +42,10 @@ def test_v3_rejects_stale_signature_timestamp() -> None:
 
 
 def test_agent_command_argv_uses_platform_shell() -> None:
-    assert v3_agent.command_argv("echo ok") == ["/bin/sh", "-c", "echo ok"]
+    if v3_agent.os.name == "nt":
+        assert v3_agent.command_argv("echo ok")[-1] == "echo ok"
+    else:
+        assert v3_agent.command_argv("echo ok") == ["/bin/sh", "-c", "echo ok"]
 
     with mock.patch.object(v3_agent.os, "name", "nt"):
         with mock.patch.dict(v3_agent.os.environ, {}, clear=False):
@@ -73,7 +76,8 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "nexus-v3-agent.service" in installer
     assert "install_openwrt_agent" in installer
     assert "openwrt-agent" in installer
-    assert "cleanup_legacy" in installer
+    assert "cleanup_legacy" not in installer
+    assert "managed-targets" not in installer
     assert "sync_ssh_authorized_keys.sh" in installer
     assert "sync-cluster-ssh" in installer
     assert "trigger_cluster_ssh_sync" in installer
@@ -81,6 +85,8 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "OnUnitActiveSec" not in installer
     assert "*/5 * * * * /opt/nexus-agent/sync_ssh_authorized_keys.sh" not in installer
     assert "/api/devices/heartbeat" not in agent
+    assert "/v3/devices/heartbeat" not in python_agent
+    assert "agent_presence" in broker
     assert '"$BROKER_URL/claim' not in agent
     assert "require_success" in python_agent
     assert "subprocess.TimeoutExpired" in python_agent

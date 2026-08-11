@@ -56,12 +56,9 @@ export default {
       '/': ['index.html', 'text/html; charset=utf-8'],
       '/index.html': ['index.html', 'text/html; charset=utf-8'],
       '/README.md': ['README.md', 'text/markdown; charset=utf-8'],
-      '/readme': ['README.md', 'text/markdown; charset=utf-8'],
       '/install.sh': ['install.sh', 'application/x-sh; charset=utf-8'],
-      '/install_v2.sh': ['install.sh', 'application/x-sh; charset=utf-8'],
       '/chatgpt-prompt.md': ['nexus-v3-chatgpt-remote-prompt.md', 'text/markdown; charset=utf-8'],
       '/openapi.json': ['nexus-v3-remote-control-openapi.json', 'application/json; charset=utf-8'],
-      '/nexus_openapi.json': ['nexus-v3-remote-control-openapi.json', 'application/json; charset=utf-8'],
       '/status.json': ['status.json', 'application/json; charset=utf-8'],
     };
 

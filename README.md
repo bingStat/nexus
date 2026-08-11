@@ -1,141 +1,146 @@
-# Nexus v3 架构与安装
+# Nexus v3
 
-Nexus 是个人设备集群远程控制面。ChatGPT 不直接 SSH 到设备，而是调用 Nexus Remote API；任务进入区域 Broker 后，由已批准 Agent 自行领取并用本机 `identity_ed25519` 签名回执。
-
-```text
-ChatGPT / MCP -> Nexus Remote API -> Registry -> EU/CN Broker -> Agent
-```
-
-ChatGPT 导入提示词和 Action JSON 单独放在 [NEXUS_CHATGPT_PROMPT.md](NEXUS_CHATGPT_PROMPT.md)。
-
-## 当前节点
-
-| 设备 ID | 区域 | 状态 | 说明 |
-|---|---:|---|---|
-| `oracle` | EU | 已部署 | Registry、EU Broker、ChatGPT Remote、MCP；有 admin key 与 ChatGPT bearer token |
-| `thinkcenter` | CN | 已部署 | CN Broker、Agent；有 admin key |
-| `n1` | CN | 已部署 | OpenWrt/iStoreOS Agent，自行领取任务 |
-| `vsc` | EU | 已部署 | HPC 用户态 Agent；入站 SSH 受 VSC/HPC 策略限制 |
-| `victus` | EU | 已部署 | Windows Agent，计划任务运行 |
-| `victus-wsl` | EU | 已部署 | WSL Agent |
-| `elitebook` | EU | 预留 | 新设备 ID |
-| `ax3600` | CN | 预留 | OpenWrt；可自领任务，必要时 ThinkCenter 指挥 |
-
-## 设备身份
-
-每个节点只保留一套 Nexus 身份。私钥本地保存，Agent 自动用它签名；公钥登记为 API identity，同时进入 SSH 互信网络。
+Nexus 是个人设备集群的远程控制面与分布式开发空间。当前只有一套生产架构：
 
 ```text
-/etc/nexus-agent/identity_ed25519      # 私钥：API 签名 + SSH 登录
-/etc/nexus-agent/identity_ed25519.pub  # 公钥：设备 API key + SSH public key
+ChatGPT / MCP
+      |
+      v
+Remote API / MCP Adapter
+      |
+      +--> Registry (device identity / approval / SSH public keys)
+      |
+      +--> EU Broker --------> EU Agent
+      |
+      +--> CN Broker --------> CN Agent
 ```
 
-Windows Victus 路径：
+每个 Agent 使用本机 Ed25519 身份签名请求；Broker 只向**明确指定的目标设备**交付任务。网络或 Broker 故障切换不得改变 `target_device`。
+
+## 核心能力
+
+- Ed25519 设备身份与 Registry 审批
+- EU / CN 区域 Broker
+- 单设备 shell 执行与最多 16 个任务的 batch
+- DevSpace workspace：read / patch / exec / interactive session
+- Broker idempotency、lease 超时恢复
+- Agent execution ledger，防止回执丢失导致重复执行
+- Broker long-poll presence 与 online / degraded / offline 状态
+- 3/5 分钟低频监控、抖动抑制、Telegram 批量告警
+- Agent Council 多 Agent 评审/实施模块
+
+## 项目结构
 
 ```text
-C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519
-C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519.pub
+nexus_v3/       核心控制面：Registry、Broker、Agent、Remote API、MCP、DevSpace adapter
+runtime/        上游 DevSpace runtime bridge
+ops/            健康快照、告警、Telegram、状态归档、systemd units
+scripts/        审批、验证、runtime 更新工具
+dashboard/      nexus.bings.app 静态面板与 Worker
+agent-council/  多 Agent Council；与 Nexus 控制面解耦
+docs/           架构、安全、恢复说明
+tests/          v3 契约与回归测试
 ```
 
-## 一键安装
+根目录只有两个安装入口：
 
-Linux/systemd：
+- `install.sh`：Linux / OpenWrt / 服务端组件
+- `install.ps1`：Windows Agent
+
+`.bak/` 仅用于本地迁移归档，并被 Git 忽略。
+
+## Canonical device IDs
+
+`oracle`, `thinkcenter`, `n1`, `vsc`, `victus`, `victus-wsl`, `elitebook`, `ax3600`
+
+不支持 `all`、`broadcast`、模糊 alias 或“目标设备离线后换另一台机器代执行”。
+
+## 安装
+
+Linux Agent：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sudo sh -s -- <设备ID>
+curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/main/install.sh | sudo sh -s -- agent <device-id>
 ```
 
-OpenWrt/iStoreOS：
+OpenWrt / iStoreOS：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sh -s -- <设备ID>
+curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/main/install.sh | sh -s -- openwrt-agent <n1-or-ax3600>
 ```
 
-常用示例：
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/bingStat/nexus/main/install.ps1 -OutFile $env:TEMP\nexus-install.ps1
+& $env:TEMP\nexus-install.ps1 -DeviceId victus
+```
+
+服务端组件：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sudo sh -s -- elitebook
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/release/core-2aea394/install.sh | sh -s -- n1
-
 sudo ./install.sh registry
 sudo ./install.sh broker eu
 sudo ./install.sh broker cn
 sudo ./install.sh remote
-sudo ./install.sh thinkcenter
+sudo ./install.sh ops
 ```
 
-## 批准新设备
+## 设备身份与配置
 
-新设备首次注册为 `pending`。当前有 admin key 的机器：
+Linux/OpenWrt 默认身份：
 
-- `oracle`：`/etc/nexus-v3.env` 内有 `NEXUS_V3_ADMIN_KEY`
-- `thinkcenter`：`/etc/nexus-v3.env` 内有 `NEXUS_V3_ADMIN_KEY`
-
-批准命令：
-
-```bash
-sudo env NEXUS_V3_REGISTRY_URL=https://nexus-global-api.bings.app \
-  python3 scripts/approve_v3_devices.py <设备ID>
+```text
+/etc/nexus-agent/identity_ed25519
+/etc/nexus-agent/identity_ed25519.pub
 ```
 
-批准后同步 SSH 公钥。SSH 同步不使用 cron；只在安装/批准新机器后触发一次：
+Windows 默认身份：
+
+```text
+%LOCALAPPDATA%\NexusAgentV3\identity_ed25519
+%LOCALAPPDATA%\NexusAgentV3\identity_ed25519.pub
+```
+
+私钥只留在本机。Registry 只保存公钥与批准状态。Agent 正常 long-poll 区域 Broker 时顺带刷新 presence，不产生额外 heartbeat 流量；控制面按 Broker 最近 presence 计算 runtime state。
+
+若目标存在 Node >= 22.19 与 npm，安装器会启用 DevSpace；Linux 用 `NEXUS_DEVSPACE_ALLOWED_ROOTS` 指定可访问根目录，Windows 用 `-AllowedRoots`。
+
+## 新设备批准
+
+首次注册为 `pending`，在有 `NEXUS_V3_ADMIN_KEY` 的管理节点执行：
 
 ```bash
 NEXUS_V3_REGISTRY_URL=https://nexus-global-api.bings.app \
-NEXUS_CLUSTER_SSH_HOSTS='oracle_amd root@100.103.12.14 root@100.90.67.12' \
-sudo ./install.sh sync-cluster-ssh
+python3 scripts/approve_v3_devices.py <device-id>
 ```
 
-同步脚本只替换 `authorized_keys` 中这个区块，不改用户自己的 key：
+## Remote API / MCP
 
-```text
-### BEGIN NEXUS MANAGED SSH KEYS
-...
-### END NEXUS MANAGED SSH KEYS
+ChatGPT 接入说明见 [NEXUS_CHATGPT_PROMPT.md](NEXUS_CHATGPT_PROMPT.md)。机器可读资产：
+
+- `agent-council/integrations/nexus-v3-remote-control-openapi.json`
+- `agent-council/integrations/nexus-v3-chatgpt-remote-prompt.md`
+
+主要接口：`getFleetStatus`, `listDevices`, `getDevice`, `executeCommand`, `executeBatch`, `executeRuntimeOperation`, `getJob`。
+
+## 运维策略
+
+`ops/` 不依赖 Supabase。默认 cadence：
+
+- health snapshot：3 分钟
+- alert evaluation：3 分钟
+- Telegram：5 分钟
+- state archive：5 分钟
+
+告警默认需要连续失败确认，恢复也需要连续成功确认；30 分钟内再次抖动会提高 reopen 阈值。详见 `ops/README.md`。
+
+## 验证
+
+```bash
+python -m pytest -q
+python scripts/verify_v3.py
+sh -n install.sh ops/install.sh runtime/devspace/install.sh nexus_v3/assets/openwrt_v3_agent.sh
 ```
 
-OpenWrt/Dropbear 写入 `/etc/dropbear/authorized_keys`；Linux root 写入 `/root/.ssh/authorized_keys`；VSC/Windows 用户路径需按该用户环境同步。
-
-## 运行时位置
-
-| 项 | 路径 |
-|---|---|
-| Registry DB | `/var/lib/nexus-v3/registry.db` |
-| Broker DB | `/var/lib/nexus-v3/broker.db` |
-| Linux Agent 配置 | `/etc/nexus-agent/v3.json` |
-| OpenWrt Agent 配置 | `/etc/nexus-agent/v3.env` |
-| ChatGPT Remote 环境 | `/etc/nexus-chatgpt-remote.env` |
-| 设备批准脚本 | `scripts/approve_v3_devices.py` |
-| 验证脚本 | `scripts/verify_v3.py` |
-| 机器可读 Action 文件 | `agent-council/integrations/` |
-
-## Nexus 控制配置（原 `nexus.json`）
-
-```json
-{
-  "version": 1,
-  "alias": "nexus",
-  "default_node": "victus",
-  "council_mode": "web-hybrid",
-  "risk_policy": "auto_worktree_only",
-  "verification": [
-    "python -m unittest discover -s agent-council/tests -v",
-    "python -m py_compile agent-council/council.py agent-council/web_council.py agent-council/web_board.py"
-  ],
-  "approval_required": [
-    "merge",
-    "push",
-    "deploy",
-    "main_branch_mutation",
-    "credential_change"
-  ]
-}
-```
-
-## 保留原则
-
-- 根目录文档只保留 `README.md` 和 `NEXUS_CHATGPT_PROMPT.md`。
-- `install.sh` 是唯一安装入口。
-- `agent-council/` 保留 Council 机制。
-- `agent-council/integrations/` 保留机器可读副本，供测试和安装器使用。
-- 旧 Supabase、旧 webhook、旧 browser bridge、旧多脚本安装方案不再作为当前事实来源。
+生产基线以 GitHub `main` 为唯一代码事实源；Victus 和 VSC 工作副本必须与同一 `main` commit 对齐。

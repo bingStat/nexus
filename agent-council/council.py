@@ -291,30 +291,15 @@ def evidence_bundle(*paths: Path) -> str:
 
 def load_repo_nexus_config(repo: Path) -> tuple[dict[str, Any], str] | tuple[None, None]:
     config_path = repo / "nexus.json"
-    if config_path.exists():
-        try:
-            return json.loads(config_path.read_text(encoding="utf-8-sig")), "nexus.json"
-        except (OSError, json.JSONDecodeError) as exc:
-            raise CouncilError(f"NEEDS_RECIPE: invalid {config_path}: {exc}") from exc
-
-    readme_path = repo / "README.md"
-    if not readme_path.exists():
+    if not config_path.exists():
         return None, None
     try:
-        readme = readme_path.read_text(encoding="utf-8-sig", errors="replace")
-    except OSError:
-        return None, None
-    match = re.search(
-        r"#{2,3} Nexus 控制配置（原 `nexus\.json`）\s*\n\s*```json\s*\n(.*?)\n```",
-        readme,
-        re.DOTALL,
-    )
-    if not match:
-        return None, None
-    try:
-        return json.loads(match.group(1)), "README.md:Nexus 控制配置"
-    except json.JSONDecodeError as exc:
-        raise CouncilError(f"NEEDS_RECIPE: invalid embedded nexus config in {readme_path}: {exc}") from exc
+        value = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CouncilError(f"NEEDS_RECIPE: invalid {config_path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise CouncilError(f"NEEDS_RECIPE: {config_path} must contain a JSON object")
+    return value, "nexus.json"
 
 
 def resolve_acceptance_commands(repo: Path, supplied: list[str], *, required: bool) -> tuple[list[str], str]:

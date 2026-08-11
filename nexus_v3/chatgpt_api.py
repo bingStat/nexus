@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .remote_control import execute_command, get_device, get_job, list_devices, submit_operation
+from .remote_control import execute_batch, execute_command, fleet_status, get_device, get_job, list_devices, submit_operation
 
 VERSION = "3.1.0"
 
@@ -54,6 +54,21 @@ def openapi_document() -> dict[str, Any]:
                         {"name": "device_id", "in": "path", "required": True, "schema": {"type": "string"}}
                     ],
                     "responses": {"200": {"description": "Device identity"}},
+                }
+            },
+            "/api/status": {
+                "get": {
+                    "operationId": "getFleetStatus",
+                    "summary": "Get current device runtime states and Regional Broker health",
+                    "responses": {"200": {"description": "Fleet status"}},
+                }
+            },
+            "/api/commands/batch": {
+                "post": {
+                    "operationId": "executeBatch",
+                    "summary": "Execute up to 16 shell jobs concurrently on explicitly named devices",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["jobs"], "properties": {"jobs": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "object", "required": ["device_id", "command"]}}, "wait_seconds": {"type": "integer", "default": 20}}}}}},
+                    "responses": {"200": {"description": "Ordered batch results"}},
                 }
             },
             "/api/commands": {
@@ -165,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/openapi.json":
                 return self.send_json(200, openapi_document())
             self.require_auth()
+            if parsed.path == "/api/status":
+                return self.send_json(200, fleet_status())
             if parsed.path == "/api/devices":
                 status = parse_qs(parsed.query).get("status", ["approved"])[0]
                 return self.send_json(200, list_devices(status))
@@ -192,6 +209,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.require_auth()
             payload = json.loads(body.decode("utf-8") or "{}")
+            if parsed.path == "/api/commands/batch":
+                jobs = payload["jobs"]
+                if not isinstance(jobs, list):
+                    raise ValueError("jobs must be an array")
+                return self.send_json(200, execute_batch(jobs, int(payload.get("wait_seconds") or 20)))
             if parsed.path == "/api/commands":
                 return self.send_json(
                     200,

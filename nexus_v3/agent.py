@@ -13,6 +13,7 @@ import requests
 
 from .common import Identity, b64url, canonical_registration_message, json_dumps
 from .devspace_runtime import DevSpaceRuntime
+from .ledger import ExecutionLedger
 
 VERSION = "3.1.0"
 
@@ -97,6 +98,8 @@ def main() -> None:
     )
     agent_id = f"{device_id}:{socket.gethostname()}:{os.getpid()}"
     devspace, capabilities = load_devspace_runtime(config)
+    ledger_path = Path(config.get("execution_ledger") or (config_path().parent / "execution-ledger.db"))
+    ledger = ExecutionLedger(ledger_path)
 
     ssh_public_key = ""
     ssh_public_key_path = config.get("ssh_public_key")
@@ -142,7 +145,7 @@ def main() -> None:
                 require_success(code, job, "job claim", {200})
                 if not job:
                     raise RuntimeError("job claim returned an empty body")
-                execute_and_complete(config, identity, device_id, broker, job, devspace)
+                execute_and_complete(config, identity, device_id, broker, job, devspace, ledger)
             except Exception as exc:
                 print(json_dumps({"event": "agent.error", "device_id": device_id, "error": str(exc)[:500]}), flush=True)
                 time.sleep(5)
@@ -178,10 +181,22 @@ def execute_and_complete(
     broker: str,
     job: dict,
     devspace: DevSpaceRuntime | None = None,
+    ledger: ExecutionLedger | None = None,
 ) -> None:
     timeout = max(1, int(job.get("timeout_ms") or 30000) // 1000)
+    replay_state, cached = ledger.begin(job) if ledger else ("new", None)
     try:
-        status, exit_code, output, result = execute_job(job, devspace)
+        if replay_state == "terminal" and cached:
+            status = str(cached["status"]); exit_code = int(cached.get("exit_code") or 0)
+            output = str(cached.get("output") or ""); result = cached.get("result") or {}
+        elif replay_state == "conflict":
+            raise RuntimeError("duplicate job id conflicts with a different operation")
+        elif replay_state == "uncertain":
+            raise RuntimeError("duplicate execution suppressed because previous execution state is uncertain")
+        else:
+            status, exit_code, output, result = execute_job(job, devspace)
+            if ledger:
+                ledger.finish(str(job["id"]), status, exit_code, output, result)
     except subprocess.TimeoutExpired as exc:
         status = "timeout"
         exit_code = 124

@@ -1,0 +1,27 @@
+{
+  "status_url": "http://127.0.0.1:18131/api/status",
+  "health_file": "/var/lib/nexus/ops/health.json",
+  "health_ttl_seconds": 900,
+  "checks": {
+    "http": [
+      {"id": "registry", "name": "Nexus Registry", "url": "http://127.0.0.1:18101/v3/health", "timeout": 8},
+      {"id": "eu-broker", "name": "EU Broker", "url": "http://127.0.0.1:18102/v3/health", "timeout": 8}
+    ],
+    "tcp": [
+      {"id": "vsc-reverse-ssh", "name": "VSC reverse SSH", "host": "127.0.0.1", "port": 22204, "timeout": 5}
+    ]
+  },
+  "alerts": {
+    "service_failure_streak": 3,
+    "device_failure_streak": 5,
+    "low_priority_failure_streak": 5,
+    "recovery_streak": 3,
+    "reopen_streak": 10,
+    "reopen_window_seconds": 1800,
+    "max_events": 500,
+    "silenced": [],
+    "low_priority": ["device:ax3600"]
+  },
+  "telegram": {"token_file": "/etc/nexus/telegram.token"},
+  "state_store": {"db_file": "/var/lib/nexus/ops/state.db", "retention_days": 30}
+}

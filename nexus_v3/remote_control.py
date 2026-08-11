@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from .status import annotate_device, annotate_device_payload
 
 DEFAULT_DEVICE_REGIONS = {
     "oracle": "eu",
@@ -19,11 +21,6 @@ DEFAULT_DEVICE_REGIONS = {
     "thinkcenter": "cn",
     "n1": "cn",
     "ax3600": "cn",
-}
-
-DEFAULT_MANAGED_TARGETS = {
-    "n1": {"controller": "thinkcenter", "ssh": "root@100.90.67.12"},
-    "ax3600": {"controller": "thinkcenter", "ssh": "root@192.168.1.1"},
 }
 
 DEFAULT_BLOCKED_PATTERNS = [
@@ -79,37 +76,6 @@ def resolve_region(device_id: str) -> str:
     return region
 
 
-def managed_targets() -> dict[str, dict[str, str]]:
-    configured = env_json("NEXUS_V3_MANAGED_TARGETS", DEFAULT_MANAGED_TARGETS)
-    return {
-        str(device).lower(): {"controller": str(config["controller"]).lower(), "ssh": str(config["ssh"])}
-        for device, config in configured.items()
-    }
-
-
-def approved_device_exists(device_id: str) -> bool:
-    device = device_id.strip().lower()
-    code, _payload = request_json("GET", f"{registry_url()}/v3/devices/{device}/public-key")
-    return code == 200
-
-
-def dispatch_target(device_id: str, command: str) -> tuple[str, str, str | None]:
-    """Legacy shell fallback only. It may change the executing controller, never the requested target semantics."""
-    device = device_id.strip().lower()
-    if approved_device_exists(device):
-        return device, command, None
-    managed = managed_targets().get(device)
-    if not managed:
-        return device, command, None
-    controller = managed["controller"]
-    remote_command = (
-        "ssh -o BatchMode=yes -o ConnectTimeout=10 "
-        "-o StrictHostKeyChecking=accept-new "
-        f"{shlex.quote(managed['ssh'])} -- sh -c {shlex.quote(command)}"
-    )
-    return controller, remote_command, device
-
-
 def command_policy(command: str) -> None:
     if os.getenv("NEXUS_V3_ALLOW_DANGEROUS", "0") == "1":
         return
@@ -147,15 +113,74 @@ def require_success(code: int, payload: Any, expected: set[int]) -> Any:
     raise RuntimeError(f"Nexus API returned HTTP {code}: {detail}")
 
 
+def list_agent_presence(region: str) -> dict[str, Any]:
+    normalized_region = region.strip().lower()
+    if normalized_region not in {"eu", "cn"}:
+        raise ValueError("region must be eu or cn")
+    code, payload = request_json("GET", f"{broker_url(normalized_region)}/v3/agents")
+    result = require_success(code, payload, {200})
+    result["broker_region"] = normalized_region
+    return result
+
+
+def presence_map() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    merged: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
+    for region in ("eu", "cn"):
+        try:
+            payload = list_agent_presence(region)
+            for row in payload.get("agents", []):
+                if not isinstance(row, dict):
+                    continue
+                device_id = str(row.get("device_id") or "").strip().lower()
+                if not device_id:
+                    continue
+                merged[device_id] = {**row, "broker_region": region}
+        except Exception as exc:
+            errors[region] = f"{type(exc).__name__}: {str(exc)[:160]}"
+    return merged, errors
+
+
+def annotate_with_presence(row: dict[str, Any], presence: dict[str, Any] | None) -> dict[str, Any]:
+    merged = dict(row)
+    if presence:
+        merged["last_seen_at"] = presence.get("last_seen")
+        merged["agent_id"] = presence.get("agent_id")
+        merged["broker_region"] = presence.get("broker_region")
+        merged["presence_source"] = "broker-long-poll"
+    else:
+        merged["last_seen_at"] = None
+        merged["presence_source"] = "none"
+    return annotate_device(merged)
+
+
 def list_devices(status: str = "approved") -> dict[str, Any]:
     code, payload = request_json("GET", f"{registry_url()}/v3/admin/devices?{urlencode({'status': status})}")
-    return require_success(code, payload, {200})
+    result = require_success(code, payload, {200})
+    presences, errors = presence_map()
+    devices = []
+    for row in result.get("devices", []):
+        if isinstance(row, dict):
+            device_id = str(row.get("device_id") or "").strip().lower()
+            devices.append(annotate_with_presence(row, presences.get(device_id)))
+    return {**result, "devices": devices, "presence_errors": errors}
 
 
 def get_device(device_id: str) -> dict[str, Any]:
     device = device_id.strip().lower()
     code, payload = request_json("GET", f"{registry_url()}/v3/devices/{device}/public-key")
-    return require_success(code, payload, {200})
+    row = require_success(code, payload, {200})
+    region = resolve_region(device)
+    try:
+        presence = next(
+            (item for item in list_agent_presence(region).get("agents", []) if str(item.get("device_id") or "").lower() == device),
+            None,
+        )
+    except Exception:
+        presence = None
+    if presence:
+        presence = {**presence, "broker_region": region}
+    return annotate_with_presence(row, presence)
 
 
 def require_devspace_device(device_id: str) -> dict[str, Any]:
@@ -174,6 +199,16 @@ def get_job(job_id: str, region: str) -> dict[str, Any]:
     payload = require_success(code, payload, {200})
     payload["broker_region"] = normalized_region
     return payload
+
+
+def list_jobs(region: str, limit: int = 50) -> dict[str, Any]:
+    normalized_region = region.strip().lower()
+    if normalized_region not in {"eu", "cn"}:
+        raise ValueError("region must be eu or cn")
+    code, payload = request_json("GET", f"{broker_url(normalized_region)}/v3/jobs?{urlencode({'limit': max(1, min(limit, 200))})}")
+    result = require_success(code, payload, {200})
+    result["broker_region"] = normalized_region
+    return result
 
 
 def wait_for_job(job: dict[str, Any], region: str, wait_seconds: int) -> dict[str, Any]:
@@ -217,28 +252,56 @@ def submit_operation(
     return wait_for_job(require_success(code, job, {201}), region, wait_seconds)
 
 
+def execute_batch(jobs: list[dict[str, Any]], wait_seconds: int = 20) -> dict[str, Any]:
+    if not 1 <= len(jobs) <= 16:
+        raise ValueError("jobs must contain 1 to 16 items")
+    results: list[dict[str, Any]] = [{} for _ in jobs]
+    with ThreadPoolExecutor(max_workers=min(8, len(jobs)), thread_name_prefix="nexus-batch") as pool:
+        futures = {}
+        for index, job in enumerate(jobs):
+            future = pool.submit(execute_command, str(job["device_id"]), str(job["command"]), int(job.get("timeout_ms") or 30000), int(job.get("wait_seconds", wait_seconds)))
+            futures[future] = index
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                results[index] = future.result()
+            except Exception as exc:
+                results[index] = {"status": "failed", "error": type(exc).__name__, "detail": str(exc)[:500]}
+    return {"results": results}
+
+
+def fleet_status() -> dict[str, Any]:
+    devices = list_devices("approved").get("devices", [])
+    counts = {key: 0 for key in ("online", "degraded", "offline", "unknown")}
+    for device in devices:
+        state = str(device.get("runtime_status") or "unknown")
+        counts[state] = counts.get(state, 0) + 1
+    brokers = {}
+    for region in ("eu", "cn"):
+        try:
+            code, health = request_json("GET", f"{broker_url(region)}/v3/health")
+            brokers[region] = health if code == 200 else {"status": "offline", "http_status": code}
+        except Exception as exc:
+            brokers[region] = {"status": "offline", "error": type(exc).__name__}
+    return {"devices": devices, "counts": counts, "total": len(devices), "brokers": brokers}
+
+
 def execute_command(device_id: str, command: str, timeout_ms: int = 30000, wait_seconds: int = 20) -> dict[str, Any]:
     device = device_id.strip().lower()
     command_policy(command)
-    target_device, target_command, managed_target = dispatch_target(device, command)
-    region = resolve_region(target_device)
+    region = resolve_region(device)
     code, job = request_json(
         "POST",
         f"{broker_url(region)}/v3/jobs",
         {
-            "target_device": target_device,
+            "target_device": device,
             "operation": "shell.execute",
-            "input": {"command": target_command},
-            "command": target_command,
+            "input": {"command": command},
+            "command": command,
             "timeout_ms": max(1000, min(timeout_ms, 86400000)),
         },
     )
-    result = wait_for_job(require_success(code, job, {201}), region, wait_seconds)
-    if managed_target:
-        result["requested_device"] = device
-        result["managed_target"] = managed_target
-        result["controller_device"] = target_device
-    return result
+    return wait_for_job(require_success(code, job, {201}), region, wait_seconds)
 
 
 def open_workspace(

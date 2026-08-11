@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_chatgpt_remote_openapi_is_valid() -> None:
     spec = json.loads((ROOT / "agent-council" / "integrations" / "nexus-v3-remote-control-openapi.json").read_text(encoding="utf-8"))
     assert spec["openapi"] == "3.1.0"
-    assert {"listDevices", "getDevice", "executeCommand", "executeRuntimeOperation", "getJob"} <= {
+    assert {"getFleetStatus", "listDevices", "getDevice", "executeCommand", "executeBatch", "executeRuntimeOperation", "getJob"} <= {
         operation["operationId"]
         for methods in spec["paths"].values()
         for operation in methods.values()
@@ -27,7 +27,9 @@ def test_chatgpt_remote_installer_deploys_mcp_and_action_api() -> None:
     assert "nexus-chatgpt-remote.service" in text
     assert "nexus-v3-mcp.service" in text
     assert "install_openwrt_agent" in text
-    assert "n1 and ax3600 self-claim jobs" in text
+    assert "managed-targets" not in text
+    assert "cleanup_legacy" not in text
+    assert "remote|chatgpt-remote" not in text
 
 
 def test_chatgpt_prompt_mentions_canonical_devices_and_receipts() -> None:
@@ -37,34 +39,23 @@ def test_chatgpt_prompt_mentions_canonical_devices_and_receipts() -> None:
     assert "status" in prompt
 
 
-def test_managed_target_fallback_prefers_controller_when_device_unapproved(monkeypatch) -> None:
+def test_execute_command_never_substitutes_target_device(monkeypatch) -> None:
     from nexus_v3 import remote_control
 
-    def fake_request_json(method: str, url: str, body=None):
-        if "/v3/devices/ax3600/public-key" in url:
-            return 404, {"error": "not_found"}
-        raise AssertionError(url)
-
-    monkeypatch.setattr(remote_control, "request_json", fake_request_json)
-    target, command, managed = remote_control.dispatch_target("ax3600", "uptime")
-
-    assert target == "thinkcenter"
-    assert managed == "ax3600"
-    assert "root@192.168.1.1" in command
-    assert "uptime" in command
-
-
-def test_managed_target_uses_self_when_approved(monkeypatch) -> None:
-    from nexus_v3 import remote_control
+    calls = []
 
     def fake_request_json(method: str, url: str, body=None):
-        if "/v3/devices/n1/public-key" in url:
-            return 200, {"device_id": "n1"}
-        raise AssertionError(url)
+        calls.append((method, url, body))
+        if method == "POST" and "/v3/jobs" in url:
+            return 201, {"id": "job-1", "status": "pending", "target_device": body["target_device"]}
+        if method == "GET" and "id=job-1" in url:
+            return 200, {"id": "job-1", "status": "completed", "target_device": "ax3600", "output": "ok"}
+        raise AssertionError((method, url, body))
 
     monkeypatch.setattr(remote_control, "request_json", fake_request_json)
-    target, command, managed = remote_control.dispatch_target("n1", "uname -a")
+    result = remote_control.execute_command("ax3600", "uptime", wait_seconds=2)
 
-    assert target == "n1"
-    assert command == "uname -a"
-    assert managed is None
+    submitted = next(body for method, _url, body in calls if method == "POST")
+    assert submitted["target_device"] == "ax3600"
+    assert submitted["input"]["command"] == "uptime"
+    assert result["target_device"] == "ax3600"

@@ -1,6 +1,6 @@
 # Nexus 设备身份签名鉴权
 
-状态：Nexus v3 当前设计。Agent 不保存 `NEXUS_API_TOKEN` / `apikey`；每台设备持有 Nexus 专用 Ed25519 私钥，Registry 保存公钥和批准状态，Broker 按公钥验签。
+状态：Nexus v3 当前设计。每台设备只持有本机 Nexus 专用 Ed25519 私钥；Registry 保存公钥和批准状态，Broker 按公钥验签。
 
 ## 本机存储
 

@@ -5,23 +5,111 @@
     "version": "3.1.0",
     "description": "Nexus fleet control plane. Shell commands and structured DevSpace workspace operations always target one explicitly named device; workspace operations are never redirected to a substitute device."
   },
-  "servers": [{"url": "https://nexus-global-api.bings.app"}],
-  "security": [{"BearerAuth": []}],
+  "servers": [
+    {
+      "url": "https://nexus-global-api.bings.app"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
   "paths": {
     "/api/devices": {
       "get": {
         "operationId": "listDevices",
         "summary": "List Nexus devices and runtime capabilities",
-        "parameters": [{"name": "status", "in": "query", "required": false, "schema": {"type": "string", "default": "approved"}}],
-        "responses": {"200": {"description": "Device list"}}
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "approved"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device list"
+          }
+        }
       }
     },
     "/api/devices/{device_id}": {
       "get": {
         "operationId": "getDevice",
         "summary": "Get one Nexus device and runtime capabilities",
-        "parameters": [{"name": "device_id", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "Device identity"}}
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device identity"
+          }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "operationId": "getFleetStatus",
+        "summary": "Get current device runtime states and Regional Broker health",
+        "responses": {
+          "200": {
+            "description": "Fleet status"
+          }
+        }
+      }
+    },
+    "/api/commands/batch": {
+      "post": {
+        "operationId": "executeBatch",
+        "summary": "Execute up to 16 shell jobs concurrently on explicitly named devices",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jobs"
+                ],
+                "properties": {
+                  "jobs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "device_id",
+                        "command"
+                      ]
+                    }
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ordered batch results"
+          }
+        }
       }
     },
     "/api/commands": {
@@ -35,24 +123,45 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["device_id", "command"],
+                "required": [
+                  "device_id",
+                  "command"
+                ],
                 "properties": {
-                  "device_id": {"type": "string"},
-                  "command": {"type": "string"},
-                  "timeout_ms": {"type": "integer", "default": 30000, "minimum": 1000, "maximum": 86400000},
-                  "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120}
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "type": "integer",
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
                 }
               }
             }
           }
         },
-        "responses": {"200": {"description": "Job result or accepted job"}}
+        "responses": {
+          "200": {
+            "description": "Job result or accepted job"
+          }
+        }
       }
     },
     "/api/runtime": {
       "post": {
         "operationId": "executeRuntimeOperation",
-        "summary": "Run a structured upstream DevSpace workspace operation on one named Nexus device",
+        "summary": "Run a structured DevSpace workspace operation on one named Nexus device",
         "requestBody": {
           "required": true,
           "content": {
@@ -60,22 +169,53 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["device_id", "operation", "input"],
+                "required": [
+                  "device_id",
+                  "operation",
+                  "input"
+                ],
                 "properties": {
-                  "device_id": {"type": "string"},
+                  "device_id": {
+                    "type": "string"
+                  },
                   "operation": {
                     "type": "string",
-                    "enum": ["workspace.open", "workspace.read", "workspace.apply_patch", "workspace.exec", "workspace.write_stdin"]
+                    "enum": [
+                      "workspace.open",
+                      "workspace.read",
+                      "workspace.apply_patch",
+                      "workspace.exec",
+                      "workspace.write_stdin"
+                    ]
                   },
-                  "input": {"type": "object"},
-                  "timeout_ms": {"type": "integer", "default": 30000, "minimum": 1000, "maximum": 86400000},
-                  "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120}
+                  "input": {
+                    "type": "object"
+                  },
+                  "timeout_ms": {
+                    "type": "integer",
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
                 }
               }
             }
           }
         },
-        "responses": {"200": {"description": "Workspace job result or accepted job"}, "502": {"description": "Target has no DevSpace runtime or routing failed"}}
+        "responses": {
+          "200": {
+            "description": "Workspace job result or accepted job"
+          },
+          "502": {
+            "description": "Target does not expose the DevSpace runtime or routing failed"
+          }
+        }
       }
     },
     "/api/jobs/{region}/{job_id}": {
@@ -83,15 +223,42 @@
         "operationId": "getJob",
         "summary": "Read a Nexus job from an EU or CN Broker",
         "parameters": [
-          {"name": "region", "in": "path", "required": true, "schema": {"type": "string", "enum": ["eu", "cn"]}},
-          {"name": "job_id", "in": "path", "required": true, "schema": {"type": "string"}}
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "eu",
+                "cn"
+              ]
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
-        "responses": {"200": {"description": "Job status and structured result"}}
+        "responses": {
+          "200": {
+            "description": "Job status and structured result"
+          }
+        }
       }
     }
   },
   "components": {
     "schemas": {},
-    "securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}}
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
   }
 }
