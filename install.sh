@@ -325,7 +325,7 @@ install_agent() {
   case "$device_id" in
     thinkcenter) broker_url="${broker_url:-http://127.0.0.1:18120}" ;;
     oracle|oracle-amd) broker_url="${broker_url:-http://127.0.0.1:18102}" ;;
-    *) broker_url="${broker_url:-https://nexus-broker.bings.app}" ;;
+    *) broker_url="${broker_url:-https://nexus-eu-broker.bings.app}" ;;
   esac
 
   install_dir="/opt/nexus-agent"

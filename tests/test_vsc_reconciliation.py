@@ -72,6 +72,8 @@ def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     assert "[string]$ApiToken" not in windows
     assert "NEXUS_API_TOKEN" not in windows
     assert "supabase.co" not in windows
+    assert "https://nexus-eu-broker.bings.app" in windows
+    assert "https://nexus-eu-broker.bings.app" in linux
     assert "identity_ed25519" in windows and "execution-ledger.db" in windows
     assert "/v3/devices/heartbeat" not in openwrt
     assert "NEXUS_HEARTBEAT_SECONDS" not in openwrt
