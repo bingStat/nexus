@@ -30,14 +30,28 @@ if [ -r "$IDENTITY_KEY" ] && ! sed -n '1p' "$IDENTITY_KEY" | grep -q 'BEGIN OPEN
     exit 1
   }
 fi
-if ! mkdir "$LOCK_DIR/instance" 2>/dev/null; then
-  echo "Another Nexus v3 Agent instance is running" >&2
-  exit 1
-fi
+LOCK_INSTANCE="$LOCK_DIR/instance"
+acquire_lock() {
+  if mkdir "$LOCK_INSTANCE" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCK_INSTANCE/pid"
+    return 0
+  fi
+  old_pid="$(cat "$LOCK_INSTANCE/pid" 2>/dev/null || true)"
+  if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+    echo "Another Nexus v3 Agent instance is running (pid $old_pid)" >&2
+    exit 1
+  fi
+  rm -rf "$LOCK_INSTANCE"
+  mkdir "$LOCK_INSTANCE" 2>/dev/null || { echo "Unable to acquire Nexus v3 Agent lock" >&2; exit 1; }
+  printf '%s\n' "$$" > "$LOCK_INSTANCE/pid"
+}
 cleanup_lock() {
-  rmdir "$LOCK_DIR/instance" 2>/dev/null || true
+  lock_pid="$(cat "$LOCK_INSTANCE/pid" 2>/dev/null || true)"
+  [ "$lock_pid" = "$$" ] && rm -rf "$LOCK_INSTANCE"
+  return 0
 }
 trap cleanup_lock EXIT INT TERM
+acquire_lock
 
 json_escape() {
   awk 'BEGIN{ORS=""}{gsub(/\\/,"\\\\");gsub(/"/,"\\\"");gsub(/\t/,"\\t");gsub(/\r/,"\\r");if(NR>1)printf "\\n";printf "%s",$0;}'
@@ -96,10 +110,10 @@ register_device() {
   proof_sig="$RUN_DIR/register-proof.sig"
   payload="$RUN_DIR/register.json"
   if [ -n "$ssh_pub_json" ]; then
-    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","capabilities":{"runtime":"shell"},"public_key_ed25519":"%s","ssh_public_key":"%s"}' \
+    printf '{"agent_version":"%s","capabilities":{"runtime":"shell"},"device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s","ssh_public_key":"%s"}' \
       "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" "$ssh_pub_json" > "$base"
   else
-    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","capabilities":{"runtime":"shell"},"public_key_ed25519":"%s"}' \
+    printf '{"agent_version":"%s","capabilities":{"runtime":"shell"},"device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s"}' \
       "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" > "$base"
   fi
   { printf 'NEXUS-V3-REGISTER\n'; sha256_file "$base" | tr -d '\n'; } > "$proof_msg"

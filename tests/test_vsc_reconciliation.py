@@ -83,6 +83,9 @@ def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     assert "/v3/devices/heartbeat" not in openwrt
     assert "NEXUS_HEARTBEAT_SECONDS" not in openwrt
     assert '"capabilities":{"runtime":"shell"}' in openwrt
+    assert '"agent_version":"%s","capabilities":{"runtime":"shell"},"device_id":"%s"' in openwrt
+    assert 'kill -0 "$old_pid"' in openwrt
+    assert 'rm -rf "$LOCK_INSTANCE"' in openwrt
     cleanup = linux[linux.index("cleanup_retired_linux()"):linux.index("install_ssh_sync_script()")]
     assert "nexus-api-dns-failover.service" in cleanup
     assert "/opt/nexus-global-api" in cleanup
