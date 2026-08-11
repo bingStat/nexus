@@ -55,6 +55,21 @@ tests/          v3 契约与回归测试
 
 不支持 `all`、`broadcast`、模糊 alias 或“目标设备离线后换另一台机器代执行”。
 
+## Standard roles and current production fleet
+
+Roles describe Nexus component responsibilities only. Runtime capability is a separate field: do not mix `DevSpace`, `Shell`, OS, geography, or host type into role names. Standard roles are `v3 Agent`, `v3 Registry`, `v3 Broker (EU)`, `v3 Broker (CN)`, `v3 MCP`, `Remote API`, `Ops`, and `Public Guard`.
+
+| Device | Standard roles | Runtime |
+| --- | --- | --- |
+| `oracle` | v3 Registry / v3 Broker (EU) / v3 MCP / Remote API / Ops / v3 Agent | DevSpace 1.0.6 |
+| `thinkcenter` | v3 Broker (CN) / v3 Agent / Public Guard | DevSpace 1.0.6 |
+| `victus` | v3 Agent | DevSpace 1.0.6 |
+| `victus-wsl` | v3 Agent | DevSpace 1.0.6 |
+| `vsc` | v3 Agent | Shell |
+| `n1` | v3 Agent | Shell |
+
+Dashboard and Remote API prefer live Agent `capabilities.runtime` / `capabilities.devspace_version`; this table is the current production deployment baseline and must not override live capability data.
+
 ## 安装
 
 Linux Agent：
