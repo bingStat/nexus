@@ -20,13 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.19.0"
-          cache: npm
-          cache-dependency-path: runtime/devspace/package-lock.json
       - name: Install Python dependencies
         run: python -m pip install pytest requests cryptography
       - name: Install upstream DevSpace
         working-directory: runtime/devspace
-        run: npm install --package-lock-only && npm ci
+        run: npm install --no-audit --no-fund
       - name: Verify upstream DevSpace bridge
         working-directory: runtime/devspace
         run: npm run check
