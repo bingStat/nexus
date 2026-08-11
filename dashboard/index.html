@@ -472,6 +472,60 @@
             .page { grid-template-columns: 1fr; grid-template-rows: 60vh 1fr; }
             #topo-panel { border-right: none; border-bottom: 1px solid var(--border); }
         }
+
+
+        /* Compact-density pass: keep all role/runtime information without oversized cards. */
+        header { padding: 0.5rem 1.35rem; }
+        .logo { gap: 0.6rem; }
+        .logo-icon { width: 30px; height: 30px; border-radius: 8px; font-size: 0.95rem; }
+        h1 { font-size: 0.96rem; letter-spacing: 2.5px; }
+        .tagline { font-size: 0.54rem; }
+        .header-right { gap: 0.8rem; }
+        .live-badge { padding: 0.22rem 0.62rem; font-size: 0.64rem; }
+        #last-updated { font-size: 0.6rem; }
+
+        .stats-bar { gap: 0.6rem; padding: 0.5rem 1.35rem; }
+        .stat-pill { gap: 0.42rem; border-radius: 8px; padding: 0.32rem 0.72rem; }
+        .stat-pill-icon { font-size: 0.86rem; }
+        .stat-pill-val { font-size: 0.84rem; }
+        .stat-pill-lbl { font-size: 0.54rem; }
+
+        .page { grid-template-columns: minmax(0, 1fr) 300px; height: calc(100vh - 74px); }
+        .panel-header { padding: 0.42rem 0.68rem; }
+        .panel-title { font-size: 0.57rem; letter-spacing: 1.5px; }
+        .panel-badge { font-size: 0.52rem; padding: 0.1rem 0.38rem; }
+
+        .device-list { padding: 0.32rem; max-height: 226px; }
+        .device-item { gap: 0.46rem; padding: 0.34rem 0.46rem; border-radius: 7px; margin-bottom: 0.22rem; }
+        .device-status-ring { width: 24px; height: 24px; font-size: 0.7rem; border-width: 1px; }
+        .device-name-row { gap: 0.32rem; }
+        .device-name { font-size: 0.7rem; }
+        .device-meta { font-size: 0.52rem; line-height: 1.2; }
+        .role-row { gap: 0.16rem; margin-top: 0.18rem; max-height: 2.25em; overflow: hidden; }
+        .role-chip { font-size: 0.46rem; padding: 0.14rem 0.25rem; border-radius: 5px; }
+        .runtime-chip { font-size: 0.46rem; padding: 0.14rem 0.28rem; border-radius: 5px; }
+        .device-pill { font-size: 0.48rem; padding: 0.1rem 0.32rem; border-radius: 6px; }
+
+        .service-detail { padding: 0.5rem; }
+        .service-detail-head { gap: 0.4rem; margin-bottom: 0.35rem; }
+        .service-detail-icon { width: 24px; height: 24px; border-radius: 7px; font-size: 0.75rem; }
+        .service-detail-name { font-size: 0.72rem; }
+        .service-detail-role { font-size: 0.51rem; }
+        .service-detail-tags { gap: 0.18rem; margin: 0.35rem 0 0.45rem; }
+        .service-grid { gap: 0.24rem; }
+        .service-card { padding: 0.3rem 0.38rem; border-radius: 6px; font-size: 0.54rem; }
+
+        .console-area { padding: 0.48rem; }
+        .console-row { gap: 0.4rem; margin-bottom: 0.4rem; }
+        select, input, button { font-size: 0.62rem; border-radius: 6px; padding: 0.34rem 0.5rem; }
+        button { padding: 0.34rem 0.72rem; }
+        .console-output { border-radius: 6px; padding: 0.5rem; font-size: 0.58rem; min-height: 42px; max-height: 82px; }
+
+        @media (max-width: 1180px) {
+            .page { grid-template-columns: minmax(0, 1fr) 276px; }
+            .device-list { max-height: 210px; }
+        }
+
     </style>
 </head>
 <body>
