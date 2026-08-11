@@ -59,3 +59,14 @@ def test_execute_command_never_substitutes_target_device(monkeypatch) -> None:
     assert submitted["target_device"] == "ax3600"
     assert submitted["input"]["command"] == "uptime"
     assert result["target_device"] == "ax3600"
+
+
+def test_dashboard_uses_standard_roles_and_live_runtime_capabilities() -> None:
+    html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert "deviceRoleLabel" in html
+    assert "deviceRuntimeLabel" in html
+    assert "capabilities.devspace_version" in html
+    assert "'victus-wsl'" in html
+    assert "v3 Broker (EU)" in html and "v3 Broker (CN)" in html
+    assert "EU compute target" not in html
+    assert "pending agent" not in html

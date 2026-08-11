@@ -55,3 +55,29 @@ def test_missing_presence_is_unknown_even_if_registry_update_is_recent(monkeypat
     device = remote_control.list_devices("approved")["devices"][0]
     assert device["runtime_status"] == "unknown"
     assert device["presence_source"] == "none"
+
+
+def test_standard_roles_are_separate_from_runtime_capabilities(monkeypatch) -> None:
+    recent = datetime.now(timezone.utc).isoformat()
+
+    def fake_request_json(method: str, url: str, body=None):
+        if "/v3/admin/devices" in url:
+            return 200, {"devices": [
+                {"device_id": "oracle", "status": "approved", "capabilities": {"runtime": "devspace", "devspace_version": "1.0.6"}},
+                {"device_id": "vsc", "status": "approved", "capabilities": {"runtime": "shell"}},
+            ]}
+        if url.endswith("/v3/agents") and "18102" in url:
+            return 200, {"agents": [
+                {"device_id": "oracle", "agent_id": "oracle:host:1", "last_seen": recent},
+                {"device_id": "vsc", "agent_id": "vsc:host:2", "last_seen": recent},
+            ]}
+        if url.endswith("/v3/agents"):
+            return 200, {"agents": []}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(remote_control, "request_json", fake_request_json)
+    devices = {item["device_id"]: item for item in remote_control.list_devices("approved")["devices"]}
+    assert devices["oracle"]["roles"] == ["v3 Registry", "v3 Broker (EU)", "v3 MCP", "Remote API", "Ops", "v3 Agent"]
+    assert devices["oracle"]["capabilities"]["runtime"] == "devspace"
+    assert devices["vsc"]["roles"] == ["v3 Agent"]
+    assert devices["vsc"]["capabilities"]["runtime"] == "shell"

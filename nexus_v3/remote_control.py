@@ -23,6 +23,17 @@ DEFAULT_DEVICE_REGIONS = {
     "ax3600": "cn",
 }
 
+DEFAULT_DEVICE_ROLES = {
+    "oracle": ["v3 Registry", "v3 Broker (EU)", "v3 MCP", "Remote API", "Ops", "v3 Agent"],
+    "thinkcenter": ["v3 Broker (CN)", "v3 Agent", "Public Guard"],
+    "n1": ["v3 Agent"],
+    "vsc": ["v3 Agent"],
+    "victus": ["v3 Agent"],
+    "victus-wsl": ["v3 Agent"],
+    "elitebook": ["v3 Agent"],
+    "ax3600": ["v3 Agent"],
+}
+
 DEFAULT_BLOCKED_PATTERNS = [
     r"(^|[;&|]\s*)rm\s+-rf\s+/(?:\s|$)",
     r"\b(mkfs|fdisk|parted|wipefs)\b",
@@ -66,6 +77,15 @@ def broker_url(region: str) -> str:
 def device_regions() -> dict[str, str]:
     configured = env_json("NEXUS_V3_DEVICE_REGIONS", DEFAULT_DEVICE_REGIONS)
     return {str(key).lower(): str(value).lower() for key, value in configured.items()}
+
+
+def device_roles() -> dict[str, list[str]]:
+    configured = env_json("NEXUS_V3_DEVICE_ROLES", DEFAULT_DEVICE_ROLES)
+    roles: dict[str, list[str]] = {}
+    for key, value in configured.items():
+        if isinstance(value, list):
+            roles[str(key).lower()] = [str(item) for item in value if str(item).strip()]
+    return roles
 
 
 def resolve_region(device_id: str) -> str:
@@ -143,6 +163,8 @@ def presence_map() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
 
 def annotate_with_presence(row: dict[str, Any], presence: dict[str, Any] | None) -> dict[str, Any]:
     merged = dict(row)
+    device_id = str(merged.get("device_id") or "").strip().lower()
+    merged["roles"] = device_roles().get(device_id, ["v3 Agent"])
     if presence:
         merged["last_seen_at"] = presence.get("last_seen")
         merged["agent_id"] = presence.get("agent_id")

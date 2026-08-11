@@ -584,26 +584,44 @@ let dragState = null;
 const STATUS_ICONS = { completed: '✅', running: '🔄', pending: '⏳', failed: '❌' };
 
 const DEVICE_META = {
-    oracle:      { icon: '☁️', os: 'Ubuntu 22.04', role: 'Public Registry · EU Broker · Agent', location: 'Oracle Cloud / Tailscale' },
-    thinkcenter: { icon: '🖥️', os: 'Ubuntu 24.04', role: 'CN Broker · Agent · OpenWrt control', location: 'Beijing, China' },
-    n1:          { icon: '📡', os: 'iStoreOS / OpenWrt', role: 'OpenWrt Agent', location: 'Beijing LAN' },
-    ax3600:      { icon: '📶', os: 'OpenWrt', role: 'Agent or ThinkCenter-managed target', location: 'Beijing LAN' },
-    vsc:         { icon: '🔬', os: 'RHEL / HPC', role: 'EU compute target', location: 'KU Leuven VSC' },
-    victus:      { icon: '🐧', os: 'WSL2', role: 'EU workstation target', location: 'Leuven' },
+    oracle:      { icon: '\u2601\ufe0f', os: 'Ubuntu 22.04', roles: ['v3 Registry', 'v3 Broker (EU)', 'v3 MCP', 'Remote API', 'Ops', 'v3 Agent'], location: 'Oracle Cloud / Tailscale' },
+    thinkcenter: { icon: '\uD83D\uDDA5\ufe0f', os: 'Ubuntu 24.04', roles: ['v3 Broker (CN)', 'v3 Agent', 'Public Guard'], location: 'Beijing, China' },
+    n1:          { icon: '\uD83D\uDCE1', os: 'iStoreOS / OpenWrt', roles: ['v3 Agent'], runtime: 'Shell', location: 'Beijing LAN' },
+    vsc:         { icon: '\uD83D\uDD2C', os: 'RHEL / HPC', roles: ['v3 Agent'], runtime: 'Shell', location: 'KU Leuven VSC' },
+    victus:      { icon: '\uD83E\uDE9F', os: 'Windows 11', roles: ['v3 Agent'], location: 'Leuven' },
+    'victus-wsl':{ icon: '\uD83D\uDC27', os: 'Ubuntu / WSL2', roles: ['v3 Agent'], location: 'Victus WSL2' },
+    elitebook:   { icon: '\uD83D\uDCBB', os: 'Windows', roles: ['v3 Agent'], location: 'Leuven' },
+    ax3600:      { icon: '\uD83D\uDCF6', os: 'OpenWrt', roles: ['v3 Agent'], runtime: 'Shell', location: 'Beijing LAN' },
 };
-const DEVICE_SORT_ORDER = ['oracle', 'thinkcenter', 'n1', 'ax3600', 'vsc', 'victus'];
-const STATIC_UPDATED_AT = '2026-08-09 01:31 Europe/Brussels';
-// ─── FETCH ───
+const DEVICE_SORT_ORDER = ['oracle', 'thinkcenter', 'n1', 'victus', 'victus-wsl', 'vsc', 'elitebook', 'ax3600'];
+const STATIC_UPDATED_AT = '2026-08-11 19:05 Europe/Brussels';
+
+function deviceRoleLabel(device, meta = {}) {
+    const roles = Array.isArray(device?.roles) && device.roles.length ? device.roles : (meta.roles || []);
+    return roles.length ? roles.join(' \u00b7 ') : 'v3 Agent';
+}
+
+function deviceRuntimeLabel(device, meta = {}) {
+    const capabilities = device?.capabilities && typeof device.capabilities === 'object' ? device.capabilities : {};
+    const runtime = String(capabilities.runtime || '').toLowerCase();
+    if (runtime === 'devspace') {
+        return capabilities.devspace_version ? `DevSpace ${capabilities.devspace_version}` : 'DevSpace';
+    }
+    if (runtime === 'shell') return 'Shell';
+    return meta.runtime || 'Unknown';
+}
+
+// FETCH
 function isoMinutesAgo(mins) { return new Date(Date.now() - mins * 60000).toISOString(); }
 
 function fallbackDevicesSnapshot() {
     return [
-        { device_id: 'oracle', name: 'Oracle', status: 'online', last_seen: isoMinutesAgo(1), ip: '100.116.89.65' },
-        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'online', last_seen: isoMinutesAgo(2), ip: '100.103.12.14' },
-        { device_id: 'n1', name: 'N1', status: 'online', last_seen: isoMinutesAgo(3), ip: '100.90.67.12' },
-        { device_id: 'ax3600', name: 'AX3600', status: 'pending', last_seen: isoMinutesAgo(360), ip: '' },
-        { device_id: 'vsc', name: 'VSC', status: 'pending', last_seen: isoMinutesAgo(360), ip: '' },
-        { device_id: 'victus', name: 'Victus', status: 'pending', last_seen: isoMinutesAgo(360), ip: '' },
+        { device_id: 'oracle', name: 'Oracle', status: 'online', last_seen: isoMinutesAgo(1), ip: '100.116.89.65', roles: DEVICE_META.oracle.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'online', last_seen: isoMinutesAgo(2), ip: '100.103.12.14', roles: DEVICE_META.thinkcenter.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'n1', name: 'N1', status: 'online', last_seen: isoMinutesAgo(3), ip: '100.90.67.12', roles: DEVICE_META.n1.roles, capabilities: { runtime: 'shell' } },
+        { device_id: 'victus', name: 'Victus', status: 'online', last_seen: isoMinutesAgo(2), ip: '', roles: DEVICE_META.victus.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'victus-wsl', name: 'Victus WSL', status: 'online', last_seen: isoMinutesAgo(2), ip: '', roles: DEVICE_META['victus-wsl'].roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'vsc', name: 'VSC', status: 'online', last_seen: isoMinutesAgo(3), ip: '', roles: DEVICE_META.vsc.roles, capabilities: { runtime: 'shell' } },
     ];
 }
 
@@ -694,52 +712,28 @@ const TOPO_HUBS = {
 // Device nodes with services listed
 const TOPO_DEVICES = {
     oracle: {
-        hub: 'global', x: 96, y: 28, icon: '☁️', label: 'Oracle', geo: 'Tailscale 100.116.89.65',
+        hub: 'global', x: 94, y: 22, icon: '\u2601\ufe0f', label: 'Oracle', geo: 'Oracle Cloud / Tailscale',
         services: [
-            { name: 'registry :18101', cls: 'svc-oracle', url: '' },
-            { name: 'eu-broker :18102', cls: 'svc-oracle', url: '' },
-            { name: 'nexus-agent', cls: 'svc-oracle', url: '' },
+            { name: 'v3 Registry', cls: 'svc-oracle', url: '' },
+            { name: 'v3 Broker (EU)', cls: 'svc-oracle', url: '' },
+            { name: 'v3 MCP', cls: 'svc-oracle', url: '' },
+            { name: 'Remote API', cls: 'svc-oracle', url: '' },
+            { name: 'Ops', cls: 'svc-oracle', url: '' },
+            { name: 'v3 Agent', cls: 'svc-oracle', url: '' },
         ]
     },
     thinkcenter: {
-        hub: 'china', x: 9, y: 32, icon: '🖥️', label: 'ThinkCenter', geo: 'CN control hub',
+        hub: 'china', x: 10, y: 30, icon: '\uD83D\uDDA5\ufe0f', label: 'ThinkCenter', geo: 'Beijing, China',
         services: [
-            { name: 'cn-broker', cls: 'svc-thinkcenter', url: '' },
-            { name: 'nexus-agent', cls: 'svc-thinkcenter', url: '' },
-            { name: 'OpenWrt SSH', cls: 'svc-thinkcenter', url: '' },
-            { name: 'Jellyfin', cls: 'svc-thinkcenter', url: 'https://media.bings.app' },
+            { name: 'v3 Broker (CN)', cls: 'svc-thinkcenter', url: '' },
+            { name: 'v3 Agent', cls: 'svc-thinkcenter', url: '' },
+            { name: 'Public Guard', cls: 'svc-thinkcenter', url: '' },
         ]
     },
-    n1: {
-        hub: 'china', x: 9, y: 72, icon: '📡', label: 'N1', geo: 'OpenWrt Agent',
-        services: [
-            { name: 'nexus-agent', cls: 'svc-n1', url: '' },
-            { name: 'iStoreOS', cls: 'svc-n1', url: '' },
-            { name: 'SSH trusted', cls: 'svc-n1', url: '' },
-        ]
-    },
-    ax3600: {
-        hub: 'china', x: 29, y: 52, icon: '📶', label: 'AX3600', geo: 'LAN bridge to TC + N1',
-        services: [
-            { name: 'LAN: ThinkCenter', cls: 'svc-n1', url: '' },
-            { name: 'LAN: N1', cls: 'svc-n1', url: '' },
-            { name: 'agent optional', cls: 'svc-n1', url: '' },
-        ]
-    },
-    vsc: {
-        hub: 'global', x: 96, y: 72, icon: '🔬', label: 'VSC HPC', geo: 'KU Leuven',
-        services: [
-            { name: 'compute target', cls: 'svc-vsc', url: '' },
-            { name: 'pending agent', cls: 'svc-vsc', url: '' },
-        ]
-    },
-    victus: {
-        hub: 'global', x: 62, y: 76, icon: '🐧', label: 'Victus', geo: 'Leuven',
-        services: [
-            { name: 'workstation', cls: 'svc-victus', url: '' },
-            { name: 'pending agent', cls: 'svc-victus', url: '' },
-        ]
-    },
+    n1: { hub: 'china', x: 10, y: 72, icon: '\uD83D\uDCE1', label: 'N1', geo: 'Beijing LAN', services: [{ name: 'v3 Agent', cls: 'svc-n1', url: '' }] },
+    victus: { hub: 'global', x: 62, y: 24, icon: '\uD83E\uDE9F', label: 'Victus', geo: 'Windows 11 / Leuven', services: [{ name: 'v3 Agent', cls: 'svc-victus', url: '' }] },
+    'victus-wsl': { hub: 'global', x: 72, y: 74, icon: '\uD83D\uDC27', label: 'Victus WSL', geo: 'Ubuntu / WSL2', services: [{ name: 'v3 Agent', cls: 'svc-victus', url: '' }] },
+    vsc: { hub: 'global', x: 94, y: 74, icon: '\uD83D\uDD2C', label: 'VSC', geo: 'KU Leuven HPC', services: [{ name: 'v3 Agent', cls: 'svc-vsc', url: '' }] },
 };
 
 // Cloudflare services (attached to the CF hub node)
@@ -1190,7 +1184,7 @@ function updateServiceDetail() {
             <div class="service-detail-icon">${cfg.icon}</div>
             <div>
                 <div class="service-detail-name">${escHtml(cfg.label)}</div>
-                <div class="service-detail-role">${escHtml(visual.label)} · ${escHtml(meta.role || cfg.geo || '')}</div>
+                <div class="service-detail-role">${escHtml(visual.label)} · ${escHtml(deviceRoleLabel(device, meta))} \u00b7 Runtime: ${escHtml(deviceRuntimeLabel(device, meta))}</div>
             </div>
         </div>
         <div class="service-grid">${serviceCards || '<div class="service-card">No public service</div>'}</div>
@@ -1243,7 +1237,7 @@ function renderDevices(devices) {
     const seenIds = new Set();
 
     devicesData.forEach(d => {
-        const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '🖥️', os: 'Unknown', role: '', location: '' };
+        const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '🖥️', os: 'Unknown', roles: ['v3 Agent'], location: '' };
         const visual = getDeviceVisualState(d);
         seenIds.add(d.device_id);
 
@@ -1252,7 +1246,8 @@ function renderDevices(devices) {
             row.classList.toggle('selected', d.device_id === selectedNodeId);
             row.querySelector('.device-status-ring').className = `device-status-ring ${visual.key}`;
             const spans = row.querySelectorAll('.device-meta');
-            if (spans[1]) spans[1].textContent = `Last seen: ${timeSince(d.last_seen)}`;
+            if (spans[1]) spans[1].textContent = `${deviceRoleLabel(d, meta)} \u00b7 Runtime: ${deviceRuntimeLabel(d, meta)}`;
+            if (spans[2]) spans[2].textContent = `Last seen: ${timeSince(d.last_seen)}`;
             const pill = row.querySelector('.device-pill');
             pill.className = `device-pill pill-${visual.key}`;
             pill.textContent = visual.label;
@@ -1267,6 +1262,7 @@ function renderDevices(devices) {
                 <div class="device-info">
                     <div class="device-name">${d.name || d.device_id}</div>
                     <div class="device-meta">${meta.os} · ${(d.ip || d.public_ip) && geoCache[d.ip || d.public_ip] ? geoCache[d.ip || d.public_ip] : meta.location}</div>
+                    <div class="device-meta">${escHtml(deviceRoleLabel(d, meta))} \u00b7 Runtime: ${escHtml(deviceRuntimeLabel(d, meta))}</div>
                     <div class="device-meta">Last seen: ${timeSince(d.last_seen)}</div>
                 </div>
                 <span class="device-pill pill-${visual.key}">${visual.label}</span>
@@ -1290,7 +1286,7 @@ function renderTasks(tasks) {
     document.getElementById('stat-total-tasks').textContent = '3';
     document.getElementById('task-badge').textContent = `${tasks.length} recent`;
 
-    activeFlows = new Set(['oracle', 'thinkcenter', 'n1', 'ax3600']);
+    activeFlows = new Set(['oracle', 'thinkcenter', 'n1', 'victus', 'victus-wsl', 'vsc']);
 
     if (tasks.length === 0) {
         container.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>No recent tasks</div>';
