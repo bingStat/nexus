@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$false)][string]$DeviceId = "victus",
     [string]$RegistryUrl = "https://nexus-global-api.bings.app",
-    [string]$BrokerUrl = "https://nexus-global-api.bings.app/v3/eu-broker",
+    [string]$BrokerUrl = "https://nexus-eu-broker.bings.app",
     [string]$InstallDir = "$env:LOCALAPPDATA\NexusAgentV3",
     [string[]]$AllowedRoots = @($env:USERPROFILE)
 )
