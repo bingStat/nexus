@@ -82,6 +82,7 @@ def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     assert "identity_ed25519" in windows and "execution-ledger.db" in windows
     assert "/v3/devices/heartbeat" not in openwrt
     assert "NEXUS_HEARTBEAT_SECONDS" not in openwrt
+    assert '"capabilities":{"runtime":"shell"}' in openwrt
     cleanup = linux[linux.index("cleanup_retired_linux()"):linux.index("install_ssh_sync_script()")]
     assert "nexus-api-dns-failover.service" in cleanup
     assert "/opt/nexus-global-api" in cleanup

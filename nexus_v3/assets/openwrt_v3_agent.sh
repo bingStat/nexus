@@ -96,10 +96,10 @@ register_device() {
   proof_sig="$RUN_DIR/register-proof.sig"
   payload="$RUN_DIR/register.json"
   if [ -n "$ssh_pub_json" ]; then
-    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s","ssh_public_key":"%s"}' \
+    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","capabilities":{"runtime":"shell"},"public_key_ed25519":"%s","ssh_public_key":"%s"}' \
       "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" "$ssh_pub_json" > "$base"
   else
-    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","public_key_ed25519":"%s"}' \
+    printf '{"agent_version":"%s","device_id":"%s","hostname":"%s","key_id":"%s","platform":"openwrt","capabilities":{"runtime":"shell"},"public_key_ed25519":"%s"}' \
       "$AGENT_VERSION" "$DEVICE_ID" "$(hostname 2>/dev/null || echo openwrt)" "$(key_id)" "$pub_json" > "$base"
   fi
   { printf 'NEXUS-V3-REGISTER\n'; sha256_file "$base" | tr -d '\n'; } > "$proof_msg"
