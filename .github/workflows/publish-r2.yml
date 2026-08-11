@@ -1,0 +1,78 @@
+name: Publish Nexus to R2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-r2-production
+  cancel-in-progress: false
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      RCLONE_CONFIG_R2_ACL: private
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+
+    steps:
+      - name: Checkout canonical main
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install test dependencies
+        run: python -m pip install -e '.[dev]'
+
+      - name: Run full regression suite
+        run: python -m pytest -q
+
+      - name: Stage authoritative R2 release
+        run: python scripts/stage_r2_release.py "$RUNNER_TEMP/nexus-r2-release"
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rclone
+          rclone version
+
+      - name: Validate R2 credentials
+        run: |
+          test -n "$R2_BUCKET"
+          rclone lsf "R2:$R2_BUCKET" --max-depth 1 >/dev/null
+
+      - name: Preview production changes
+        run: |
+          rclone sync "$RUNNER_TEMP/nexus-r2-release" "R2:$R2_BUCKET" \
+            --checksum --dry-run --fast-list --retries 6 --low-level-retries 12
+
+      - name: Publish production release
+        run: |
+          rclone sync "$RUNNER_TEMP/nexus-r2-release" "R2:$R2_BUCKET" \
+            --checksum --delete-during --fast-list \
+            --transfers 4 --checkers 8 \
+            --retries 6 --retries-sleep 2s --low-level-retries 12
+
+      - name: Verify checksums and exact object set
+        run: |
+          set -euo pipefail
+          rclone check "$RUNNER_TEMP/nexus-r2-release" "R2:$R2_BUCKET" --checksum --one-way
+          (cd "$RUNNER_TEMP/nexus-r2-release" && find . -type f -printf '%P\n' | LC_ALL=C sort) > "$RUNNER_TEMP/local-files.txt"
+          rclone lsf "R2:$R2_BUCKET" --files-only -R | LC_ALL=C sort > "$RUNNER_TEMP/remote-files.txt"
+          diff -u "$RUNNER_TEMP/local-files.txt" "$RUNNER_TEMP/remote-files.txt"
+          echo "R2 release verified for commit $GITHUB_SHA"
