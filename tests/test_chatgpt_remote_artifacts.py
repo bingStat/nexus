@@ -65,6 +65,10 @@ def test_dashboard_uses_standard_roles_and_live_runtime_capabilities() -> None:
     html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
     assert "deviceRoleLabel" in html
     assert "deviceRuntimeLabel" in html
+    assert "roleChipsHtml" in html
+    assert "runtimeChipHtml" in html
+    assert 'class="role-chip' in html
+    assert 'class="runtime-chip' in html
     assert "capabilities.devspace_version" in html
     assert "'victus-wsl'" in html
     assert "v3 Broker (EU)" in html and "v3 Broker (CN)" in html

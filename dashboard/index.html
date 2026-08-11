@@ -335,8 +335,23 @@
         .device-status-ring.pending { border-color: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,0.22); }
         .device-status-ring.unknown { border-color: var(--muted); opacity: 0.7; }
         .device-info { flex: 1; min-width: 0; }
+        .device-name-row { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
         .device-name { font-weight: 600; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .device-meta { font-family: var(--font-sf-display); font-size: 0.6rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .role-row { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.28rem; }
+        .role-chip {
+            font-family: var(--font-sf-display); font-size: 0.54rem; line-height: 1;
+            padding: 0.24rem 0.38rem; border-radius: 999px;
+            color: #bdd2f7; background: rgba(79,142,255,0.10);
+            border: 1px solid rgba(79,142,255,0.24); white-space: nowrap;
+        }
+        .role-chip.primary { color: #d9e8ff; background: rgba(79,142,255,0.16); border-color: rgba(79,142,255,0.38); }
+        .runtime-chip {
+            font-family: var(--font-sf-display); font-size: 0.54rem; line-height: 1;
+            padding: 0.24rem 0.42rem; border-radius: 999px; white-space: nowrap;
+            color: var(--cyan); background: rgba(34,211,238,0.09); border: 1px solid rgba(34,211,238,0.26);
+        }
+        .runtime-chip.shell { color: var(--muted); background: rgba(107,130,168,0.10); border-color: rgba(107,130,168,0.22); }
         .device-pill { font-size: 0.58rem; padding: 0.15rem 0.45rem; border-radius: 8px; font-family: var(--font-sf-display); font-weight: 700; flex-shrink: 0; }
         .pill-online { background: rgba(16,217,138,0.15); color: var(--green); border: 1px solid rgba(16,217,138,0.3); }
         .pill-offline { background: rgba(255,77,109,0.1); color: var(--red); border: 1px solid rgba(255,77,109,0.2); }
@@ -369,7 +384,9 @@
             font-family: var(--font-sf-display);
             font-size: 0.58rem;
             color: var(--muted);
+            margin-top: 0.08rem;
         }
+        .service-detail-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.55rem 0 0.7rem; }
         .service-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -596,9 +613,19 @@ const DEVICE_META = {
 const DEVICE_SORT_ORDER = ['oracle', 'thinkcenter', 'n1', 'victus', 'victus-wsl', 'vsc', 'elitebook', 'ax3600'];
 const STATIC_UPDATED_AT = '2026-08-11 19:05 Europe/Brussels';
 
-function deviceRoleLabel(device, meta = {}) {
+function deviceRoles(device, meta = {}) {
     const roles = Array.isArray(device?.roles) && device.roles.length ? device.roles : (meta.roles || []);
-    return roles.length ? roles.join(' \u00b7 ') : 'v3 Agent';
+    return roles.length ? roles : ['v3 Agent'];
+}
+
+function deviceRoleLabel(device, meta = {}) {
+    return deviceRoles(device, meta).join(' \u00b7 ');
+}
+
+function roleChipsHtml(device, meta = {}) {
+    return deviceRoles(device, meta).map((role, index) =>
+        `<span class="role-chip${index === 0 ? ' primary' : ''}">${escHtml(role)}</span>`
+    ).join('');
 }
 
 function deviceRuntimeLabel(device, meta = {}) {
@@ -609,6 +636,12 @@ function deviceRuntimeLabel(device, meta = {}) {
     }
     if (runtime === 'shell') return 'Shell';
     return meta.runtime || 'Unknown';
+}
+
+function runtimeChipHtml(device, meta = {}) {
+    const label = deviceRuntimeLabel(device, meta);
+    const shellClass = label.toLowerCase() === 'shell' ? ' shell' : '';
+    return `<span class="runtime-chip${shellClass}">${escHtml(label)}</span>`;
 }
 
 // FETCH
@@ -1184,8 +1217,12 @@ function updateServiceDetail() {
             <div class="service-detail-icon">${cfg.icon}</div>
             <div>
                 <div class="service-detail-name">${escHtml(cfg.label)}</div>
-                <div class="service-detail-role">${escHtml(visual.label)} · ${escHtml(deviceRoleLabel(device, meta))} \u00b7 Runtime: ${escHtml(deviceRuntimeLabel(device, meta))}</div>
+                <div class="service-detail-role">${escHtml(visual.label)} \u00b7 ${escHtml(meta.os || '')}</div>
             </div>
+        </div>
+        <div class="service-detail-tags">
+            ${runtimeChipHtml(device, meta)}
+            ${roleChipsHtml(device, meta)}
         </div>
         <div class="service-grid">${serviceCards || '<div class="service-card">No public service</div>'}</div>
     `;
@@ -1232,45 +1269,29 @@ function renderDevices(devices) {
     }
     if (currentVal) select.value = currentVal;
 
-    const existingRows = {};
-    container.querySelectorAll('.device-item[data-id]').forEach(el => { existingRows[el.dataset.id] = el; });
-    const seenIds = new Set();
-
+    container.innerHTML = '';
     devicesData.forEach(d => {
-        const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '🖥️', os: 'Unknown', roles: ['v3 Agent'], location: '' };
+        const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '\uD83D\uDDA5\ufe0f', os: 'Unknown', roles: ['v3 Agent'], location: '' };
         const visual = getDeviceVisualState(d);
-        seenIds.add(d.device_id);
-
-        if (existingRows[d.device_id]) {
-            const row = existingRows[d.device_id];
-            row.classList.toggle('selected', d.device_id === selectedNodeId);
-            row.querySelector('.device-status-ring').className = `device-status-ring ${visual.key}`;
-            const spans = row.querySelectorAll('.device-meta');
-            if (spans[1]) spans[1].textContent = `${deviceRoleLabel(d, meta)} \u00b7 Runtime: ${deviceRuntimeLabel(d, meta)}`;
-            if (spans[2]) spans[2].textContent = `Last seen: ${timeSince(d.last_seen)}`;
-            const pill = row.querySelector('.device-pill');
-            pill.className = `device-pill pill-${visual.key}`;
-            pill.textContent = visual.label;
-            container.appendChild(row);
-        } else {
-            const el = document.createElement('div');
-            el.className = `device-item ${d.device_id === selectedNodeId ? 'selected' : ''}`;
-            el.dataset.id = d.device_id;
-            el.onclick = () => toggleNodeServices(d.device_id);
-            el.innerHTML = `
-                <div class="device-status-ring ${visual.key}">${meta.icon}</div>
-                <div class="device-info">
-                    <div class="device-name">${d.name || d.device_id}</div>
-                    <div class="device-meta">${meta.os} · ${(d.ip || d.public_ip) && geoCache[d.ip || d.public_ip] ? geoCache[d.ip || d.public_ip] : meta.location}</div>
-                    <div class="device-meta">${escHtml(deviceRoleLabel(d, meta))} \u00b7 Runtime: ${escHtml(deviceRuntimeLabel(d, meta))}</div>
-                    <div class="device-meta">Last seen: ${timeSince(d.last_seen)}</div>
+        const el = document.createElement('div');
+        el.className = `device-item ${d.device_id === selectedNodeId ? 'selected' : ''}`;
+        el.dataset.id = d.device_id;
+        el.onclick = () => toggleNodeServices(d.device_id);
+        el.innerHTML = `
+            <div class="device-status-ring ${visual.key}">${meta.icon}</div>
+            <div class="device-info">
+                <div class="device-name-row">
+                    <div class="device-name">${escHtml(d.name || d.device_id)}</div>
+                    ${runtimeChipHtml(d, meta)}
                 </div>
-                <span class="device-pill pill-${visual.key}">${visual.label}</span>
-            `;
-            container.appendChild(el);
-        }
+                <div class="device-meta">${escHtml(meta.os)} \u00b7 ${escHtml((d.ip || d.public_ip) && geoCache[d.ip || d.public_ip] ? geoCache[d.ip || d.public_ip] : meta.location)}</div>
+                <div class="role-row">${roleChipsHtml(d, meta)}</div>
+                <div class="device-meta" style="margin-top:0.2rem">Last seen: ${timeSince(d.last_seen)}</div>
+            </div>
+            <span class="device-pill pill-${visual.key}">${visual.label}</span>
+        `;
+        container.appendChild(el);
     });
-    Object.entries(existingRows).forEach(([id, el]) => { if (!seenIds.has(id)) el.remove(); });
     updateServiceDetail();
 }
 
