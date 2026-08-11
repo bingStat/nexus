@@ -6,9 +6,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .remote_control import execute_command, get_device, get_job, list_devices
+from .remote_control import execute_command, get_device, get_job, list_devices, submit_operation
 
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 
 
 def chatgpt_api_key() -> str:
@@ -26,9 +26,12 @@ def openapi_document() -> dict[str, Any]:
     return {
         "openapi": "3.1.0",
         "info": {
-            "title": "Nexus 远程控制 API",
+            "title": "Nexus Distributed DevSpace API",
             "version": VERSION,
-            "description": "供 ChatGPT 安全调用的 Nexus v3 远程控制适配器。它只暴露已批准设备列表、公开身份查询、单设备命令提交和任务状态查询。",
+            "description": (
+                "Nexus fleet control plane. Shell commands and structured DevSpace workspace operations always "
+                "target one explicitly named device; workspace operations are never redirected to a substitute device."
+            ),
         },
         "servers": [{"url": public_base_url()}],
         "security": [{"BearerAuth": []}],
@@ -36,30 +39,27 @@ def openapi_document() -> dict[str, Any]:
             "/api/devices": {
                 "get": {
                     "operationId": "listDevices",
-                    "summary": "按审批状态列出 Nexus 设备",
-                    "security": [{"BearerAuth": []}],
+                    "summary": "List Nexus devices and runtime capabilities",
                     "parameters": [
                         {"name": "status", "in": "query", "required": False, "schema": {"type": "string", "default": "approved"}}
                     ],
-                    "responses": {"200": {"description": "成功返回设备列表"}}
+                    "responses": {"200": {"description": "Device list"}},
                 }
             },
             "/api/devices/{device_id}": {
                 "get": {
                     "operationId": "getDevice",
-                    "summary": "查询一台已批准 Nexus 设备的公开身份",
-                    "security": [{"BearerAuth": []}],
+                    "summary": "Get one Nexus device and runtime capabilities",
                     "parameters": [
                         {"name": "device_id", "in": "path", "required": True, "schema": {"type": "string"}}
                     ],
-                    "responses": {"200": {"description": "成功返回设备公开身份"}, "404": {"description": "设备不存在或未批准"}}
+                    "responses": {"200": {"description": "Device identity"}},
                 }
             },
             "/api/commands": {
                 "post": {
                     "operationId": "executeCommand",
-                    "summary": "在一台明确指定的 Nexus 设备上执行一条命令",
-                    "security": [{"BearerAuth": []}],
+                    "summary": "Execute one shell command on one named Nexus device",
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -72,34 +72,69 @@ def openapi_document() -> dict[str, Any]:
                                         "device_id": {"type": "string"},
                                         "command": {"type": "string"},
                                         "timeout_ms": {"type": "integer", "default": 30000, "minimum": 1000, "maximum": 86400000},
-                                        "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120}
-                                    }
+                                        "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120},
+                                    },
                                 }
                             }
-                        }
+                        },
                     },
-                    "responses": {"200": {"description": "返回终态任务结果，或返回已接受但仍在运行的任务卡片"}, "400": {"description": "请求字段缺失或格式无效"}, "403": {"description": "命令被安全策略拒绝"}}
+                    "responses": {"200": {"description": "Job result or accepted job"}},
+                }
+            },
+            "/api/runtime": {
+                "post": {
+                    "operationId": "executeRuntimeOperation",
+                    "summary": "Run a structured DevSpace workspace operation on one named Nexus device",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["device_id", "operation", "input"],
+                                    "properties": {
+                                        "device_id": {"type": "string"},
+                                        "operation": {
+                                            "type": "string",
+                                            "enum": [
+                                                "workspace.open",
+                                                "workspace.read",
+                                                "workspace.apply_patch",
+                                                "workspace.exec",
+                                                "workspace.write_stdin"
+                                            ],
+                                        },
+                                        "input": {"type": "object"},
+                                        "timeout_ms": {"type": "integer", "default": 30000, "minimum": 1000, "maximum": 86400000},
+                                        "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Workspace job result or accepted job"},
+                        "502": {"description": "Target does not expose the DevSpace runtime or routing failed"},
+                    },
                 }
             },
             "/api/jobs/{region}/{job_id}": {
                 "get": {
                     "operationId": "getJob",
-                    "summary": "从 EU 或 CN Broker 查询 Nexus 任务",
-                    "security": [{"BearerAuth": []}],
+                    "summary": "Read a Nexus job from an EU or CN Broker",
                     "parameters": [
                         {"name": "region", "in": "path", "required": True, "schema": {"type": "string", "enum": ["eu", "cn"]}},
-                        {"name": "job_id", "in": "path", "required": True, "schema": {"type": "string"}}
+                        {"name": "job_id", "in": "path", "required": True, "schema": {"type": "string"}},
                     ],
-                    "responses": {"200": {"description": "成功返回任务状态、退出码和输出"}, "404": {"description": "任务不存在"}}
+                    "responses": {"200": {"description": "Job status and structured result"}},
                 }
-            }
+            },
         },
         "components": {
             "schemas": {},
-            "securitySchemes": {
-                "BearerAuth": {"type": "http", "scheme": "bearer"}
-            }
-        }
+            "securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}},
+        },
     }
 
 
@@ -156,14 +191,28 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         try:
             self.require_auth()
+            payload = json.loads(body.decode("utf-8") or "{}")
             if parsed.path == "/api/commands":
-                payload = json.loads(body.decode("utf-8") or "{}")
-                return self.send_json(200, execute_command(
-                    payload["device_id"],
-                    payload["command"],
-                    int(payload.get("timeout_ms") or 30000),
-                    int(payload.get("wait_seconds") or 20),
-                ))
+                return self.send_json(
+                    200,
+                    execute_command(
+                        payload["device_id"],
+                        payload["command"],
+                        int(payload.get("timeout_ms") or 30000),
+                        int(payload.get("wait_seconds") or 20),
+                    ),
+                )
+            if parsed.path == "/api/runtime":
+                return self.send_json(
+                    200,
+                    submit_operation(
+                        payload["device_id"],
+                        payload["operation"],
+                        payload["input"],
+                        int(payload.get("timeout_ms") or 30000),
+                        int(payload.get("wait_seconds") or 20),
+                    ),
+                )
             return self.send_json(404, {"error": "not_found"})
         except PermissionError as exc:
             return self.send_json(401, {"error": str(exc)})
