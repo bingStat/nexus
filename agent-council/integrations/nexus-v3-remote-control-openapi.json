@@ -1,103 +1,33 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Nexus 远程控制 API",
-    "version": "3.0.0",
-    "description": "供 ChatGPT 安全调用的 Nexus v3 远程控制适配器，设计形态模仿 DesktopCommanderMCP Remote Gateway。它只暴露已批准设备列表、公开身份查询、单设备命令提交和任务状态查询。"
+    "title": "Nexus Distributed DevSpace API",
+    "version": "3.1.0",
+    "description": "Nexus fleet control plane. Shell commands and structured DevSpace workspace operations always target one explicitly named device; workspace operations are never redirected to a substitute device."
   },
-  "servers": [
-    {
-      "url": "https://nexus-global-api.bings.app"
-    }
-  ],
-  "security": [
-    {
-      "BearerAuth": []
-    }
-  ],
+  "servers": [{"url": "https://nexus-global-api.bings.app"}],
+  "security": [{"BearerAuth": []}],
   "paths": {
     "/api/devices": {
       "get": {
         "operationId": "listDevices",
-        "summary": "按审批状态列出 Nexus 设备",
-        "description": "默认列出 approved 设备。需要排查注册或审批状态时，可传入 pending 等状态。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "description": "设备审批状态，默认 approved。",
-            "schema": {
-              "type": "string",
-              "default": "approved"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功返回设备列表。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "502": {
-            "description": "Registry 依赖不可用。"
-          }
-        }
+        "summary": "List Nexus devices and runtime capabilities",
+        "parameters": [{"name": "status", "in": "query", "required": false, "schema": {"type": "string", "default": "approved"}}],
+        "responses": {"200": {"description": "Device list"}}
       }
     },
     "/api/devices/{device_id}": {
       "get": {
         "operationId": "getDevice",
-        "summary": "查询一台已批准 Nexus 设备的公开身份",
-        "description": "用于确认规范设备 ID、区域、主机名、平台和公开密钥记录。不会返回私钥或 token。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "device_id",
-            "in": "path",
-            "required": true,
-            "description": "规范设备 ID，例如 thinkcenter、n1、oracle、vsc、victus、victus-wsl、elitebook 或 ax3600。",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功返回设备公开身份。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "404": {
-            "description": "设备不存在或未批准。"
-          },
-          "502": {
-            "description": "Registry 依赖不可用。"
-          }
-        }
+        "summary": "Get one Nexus device and runtime capabilities",
+        "parameters": [{"name": "device_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "Device identity"}}
       }
     },
     "/api/commands": {
       "post": {
         "operationId": "executeCommand",
-        "summary": "在一台明确指定的 Nexus 设备上执行一条命令",
-        "description": "提交一个单设备、单命令任务。默认等待短时间返回终态；若仍在运行，会返回 job_id 与 broker_region，之后用 getJob 继续查询。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Execute one shell command on one named Nexus device",
         "requestBody": {
           "required": true,
           "content": {
@@ -105,115 +35,63 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "device_id",
-                  "command"
-                ],
+                "required": ["device_id", "command"],
                 "properties": {
-                  "device_id": {
-                    "type": "string",
-                    "description": "规范设备 ID。"
-                  },
-                  "command": {
-                    "type": "string",
-                    "description": "要执行的一条 shell 命令。高风险命令会被安全策略拒绝，除非服务端显式放开。"
-                  },
-                  "timeout_ms": {
-                    "type": "integer",
-                    "description": "Agent 侧命令超时时间，单位毫秒。",
-                    "default": 30000,
-                    "minimum": 1000,
-                    "maximum": 86400000
-                  },
-                  "wait_seconds": {
-                    "type": "integer",
-                    "description": "Remote Gateway 等待任务完成的秒数。返回非终态时继续用 getJob 查询。",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
-                  }
+                  "device_id": {"type": "string"},
+                  "command": {"type": "string"},
+                  "timeout_ms": {"type": "integer", "default": 30000, "minimum": 1000, "maximum": 86400000},
+                  "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120}
                 }
               }
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "返回终态任务结果，或返回已接受但仍在运行的任务卡片。"
-          },
-          "400": {
-            "description": "请求字段缺失或格式无效。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "403": {
-            "description": "命令被安全策略拒绝。"
-          },
-          "502": {
-            "description": "Registry 或 Broker 依赖不可用。"
+        "responses": {"200": {"description": "Job result or accepted job"}}
+      }
+    },
+    "/api/runtime": {
+      "post": {
+        "operationId": "executeRuntimeOperation",
+        "summary": "Run a structured upstream DevSpace workspace operation on one named Nexus device",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["device_id", "operation", "input"],
+                "properties": {
+                  "device_id": {"type": "string"},
+                  "operation": {
+                    "type": "string",
+                    "enum": ["workspace.open", "workspace.read", "workspace.apply_patch", "workspace.exec", "workspace.write_stdin"]
+                  },
+                  "input": {"type": "object"},
+                  "timeout_ms": {"type": "integer", "default": 30000, "minimum": 1000, "maximum": 86400000},
+                  "wait_seconds": {"type": "integer", "default": 20, "minimum": 0, "maximum": 120}
+                }
+              }
+            }
           }
-        }
+        },
+        "responses": {"200": {"description": "Workspace job result or accepted job"}, "502": {"description": "Target has no DevSpace runtime or routing failed"}}
       }
     },
     "/api/jobs/{region}/{job_id}": {
       "get": {
         "operationId": "getJob",
-        "summary": "从 EU 或 CN Broker 查询 Nexus 任务",
-        "description": "根据 executeCommand 返回的 broker_region 和 job_id 查询任务状态与输出。",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Read a Nexus job from an EU or CN Broker",
         "parameters": [
-          {
-            "name": "region",
-            "in": "path",
-            "required": true,
-            "description": "Broker 区域。",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "eu",
-                "cn"
-              ]
-            }
-          },
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "description": "任务 ID。",
-            "schema": {
-              "type": "string"
-            }
-          }
+          {"name": "region", "in": "path", "required": true, "schema": {"type": "string", "enum": ["eu", "cn"]}},
+          {"name": "job_id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
-        "responses": {
-          "200": {
-            "description": "成功返回任务状态、退出码和输出。"
-          },
-          "401": {
-            "description": "Bearer token 无效或缺失。"
-          },
-          "404": {
-            "description": "任务不存在。"
-          },
-          "502": {
-            "description": "Broker 依赖不可用。"
-          }
-        }
+        "responses": {"200": {"description": "Job status and structured result"}}
       }
     }
   },
   "components": {
     "schemas": {},
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
-      }
-    }
+    "securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}}
   }
 }

@@ -1,0 +1,16 @@
+{
+  "name": "@bingstat/nexus-devspace-runtime",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Thin Nexus bridge over the upstream @waishnav/devspace runtime.",
+  "engines": {
+    "node": ">=22.19 <27"
+  },
+  "dependencies": {
+    "@waishnav/devspace": "1.0.6"
+  },
+  "scripts": {
+    "check": "node ./bridge.mjs --self-test"
+  }
+}

@@ -35,6 +35,13 @@ DEFAULT_BLOCKED_PATTERNS = [
 ]
 
 TERMINAL = {"completed", "failed", "timeout"}
+WORKSPACE_OPERATIONS = {
+    "workspace.open",
+    "workspace.read",
+    "workspace.apply_patch",
+    "workspace.exec",
+    "workspace.write_stdin",
+}
 
 
 def env_json(name: str, default: Any) -> Any:
@@ -87,6 +94,7 @@ def approved_device_exists(device_id: str) -> bool:
 
 
 def dispatch_target(device_id: str, command: str) -> tuple[str, str, str | None]:
+    """Legacy shell fallback only. It may change the executing controller, never the requested target semantics."""
     device = device_id.strip().lower()
     if approved_device_exists(device):
         return device, command, None
@@ -150,6 +158,14 @@ def get_device(device_id: str) -> dict[str, Any]:
     return require_success(code, payload, {200})
 
 
+def require_devspace_device(device_id: str) -> dict[str, Any]:
+    device = get_device(device_id)
+    capabilities = device.get("capabilities") if isinstance(device.get("capabilities"), dict) else {}
+    if capabilities.get("runtime") != "devspace":
+        raise RuntimeError(f"device '{device_id}' does not advertise the DevSpace workspace runtime")
+    return device
+
+
 def get_job(job_id: str, region: str) -> dict[str, Any]:
     normalized_region = region.strip().lower()
     if normalized_region not in {"eu", "cn"}:
@@ -160,33 +176,150 @@ def get_job(job_id: str, region: str) -> dict[str, Any]:
     return payload
 
 
-def execute_command(device_id: str, command: str, timeout_ms: int = 30000, wait_seconds: int = 20) -> dict[str, Any]:
-    device = device_id.strip().lower()
-    command_policy(command)
-    target_device, target_command, managed_target = dispatch_target(device, command)
-    region = resolve_region(target_device)
+def wait_for_job(job: dict[str, Any], region: str, wait_seconds: int) -> dict[str, Any]:
+    if wait_seconds <= 0:
+        job["broker_region"] = region
+        return job
     base = broker_url(region)
-    code, job = request_json(
-        "POST",
-        f"{base}/v3/jobs",
-        {"target_device": target_device, "command": target_command, "timeout_ms": max(1000, min(timeout_ms, 86400000))},
-    )
-    job = require_success(code, job, {201})
-    if managed_target:
-        job["requested_device"] = device
-        job["managed_target"] = managed_target
-        job["controller_device"] = target_device
     deadline = time.time() + max(0, min(wait_seconds, 120))
-    while wait_seconds > 0 and time.time() < deadline:
+    while time.time() < deadline:
         time.sleep(1)
         code, current = request_json("GET", f"{base}/v3/jobs?{urlencode({'id': job['id']})}")
         current = require_success(code, current, {200})
         if current.get("status") in TERMINAL:
             current["broker_region"] = region
-            if managed_target:
-                current["requested_device"] = device
-                current["managed_target"] = managed_target
-                current["controller_device"] = target_device
             return current
     job["broker_region"] = region
     return job
+
+
+def submit_operation(
+    device_id: str,
+    operation: str,
+    input_data: dict[str, Any],
+    timeout_ms: int = 30000,
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    device = device_id.strip().lower()
+    if operation in WORKSPACE_OPERATIONS:
+        require_devspace_device(device)
+    region = resolve_region(device)
+    code, job = request_json(
+        "POST",
+        f"{broker_url(region)}/v3/jobs",
+        {
+            "target_device": device,
+            "operation": operation,
+            "input": input_data,
+            "timeout_ms": max(1000, min(timeout_ms, 86400000)),
+        },
+    )
+    return wait_for_job(require_success(code, job, {201}), region, wait_seconds)
+
+
+def execute_command(device_id: str, command: str, timeout_ms: int = 30000, wait_seconds: int = 20) -> dict[str, Any]:
+    device = device_id.strip().lower()
+    command_policy(command)
+    target_device, target_command, managed_target = dispatch_target(device, command)
+    region = resolve_region(target_device)
+    code, job = request_json(
+        "POST",
+        f"{broker_url(region)}/v3/jobs",
+        {
+            "target_device": target_device,
+            "operation": "shell.execute",
+            "input": {"command": target_command},
+            "command": target_command,
+            "timeout_ms": max(1000, min(timeout_ms, 86400000)),
+        },
+    )
+    result = wait_for_job(require_success(code, job, {201}), region, wait_seconds)
+    if managed_target:
+        result["requested_device"] = device
+        result["managed_target"] = managed_target
+        result["controller_device"] = target_device
+    return result
+
+
+def open_workspace(
+    device_id: str,
+    path: str,
+    mode: str = "checkout",
+    base_ref: str | None = None,
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    if mode not in {"checkout", "worktree"}:
+        raise ValueError("mode must be checkout or worktree")
+    payload: dict[str, Any] = {"path": path, "mode": mode}
+    if base_ref:
+        payload["baseRef"] = base_ref
+    return submit_operation(device_id, "workspace.open", payload, wait_seconds=wait_seconds)
+
+
+def read_workspace(
+    device_id: str,
+    workspace_id: str,
+    path: str,
+    offset: int | None = None,
+    limit: int | None = None,
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"workspaceId": workspace_id, "path": path}
+    if offset is not None:
+        payload["offset"] = offset
+    if limit is not None:
+        payload["limit"] = limit
+    return submit_operation(device_id, "workspace.read", payload, wait_seconds=wait_seconds)
+
+
+def apply_workspace_patch(
+    device_id: str,
+    workspace_id: str,
+    patch: str,
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    return submit_operation(
+        device_id,
+        "workspace.apply_patch",
+        {"workspaceId": workspace_id, "patch": patch},
+        wait_seconds=wait_seconds,
+    )
+
+
+def exec_workspace_command(
+    device_id: str,
+    workspace_id: str,
+    command: str,
+    working_directory: str | None = None,
+    tty: bool = False,
+    yield_time_ms: int | None = None,
+    max_output_tokens: int | None = None,
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    command_policy(command)
+    payload: dict[str, Any] = {"workspaceId": workspace_id, "command": command, "tty": tty}
+    if working_directory:
+        payload["workingDirectory"] = working_directory
+    if yield_time_ms is not None:
+        payload["yieldTimeMs"] = yield_time_ms
+    if max_output_tokens is not None:
+        payload["maxOutputTokens"] = max_output_tokens
+    return submit_operation(device_id, "workspace.exec", payload, wait_seconds=wait_seconds)
+
+
+def write_workspace_stdin(
+    device_id: str,
+    workspace_id: str,
+    session_id: int,
+    chars: str = "",
+    yield_time_ms: int | None = None,
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "workspaceId": workspace_id,
+        "sessionId": session_id,
+        "chars": chars,
+    }
+    if yield_time_ms is not None:
+        payload["yieldTimeMs"] = yield_time_ms
+    return submit_operation(device_id, "workspace.write_stdin", payload, wait_seconds=wait_seconds)
