@@ -29,4 +29,6 @@ jobs:
         working-directory: runtime/devspace
         run: npm run check
       - name: Run Nexus runtime tests
-        run: pytest -q tests/test_v3_contract.py tests/test_chatgpt_remote_artifacts.py tests/test_devspace_runtime.py
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_v3_contract.py tests/test_chatgpt_remote_artifacts.py tests/test_devspace_runtime.py
