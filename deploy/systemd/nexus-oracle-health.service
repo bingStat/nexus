@@ -1,7 +1,0 @@
-[Unit]
-Description=Nexus Oracle health snapshot
-After=network-online.target tailscaled.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/nexus-oracle-health

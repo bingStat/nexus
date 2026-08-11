@@ -1,0 +1,9 @@
+[Unit]
+Description=Nexus v3 transition-based alert engine
+After=nexus-health-snapshot.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nexus-ops
+Environment=NEXUS_OPS_CONFIG=/etc/nexus/ops.json
+ExecStart=/usr/bin/python3 -m ops.monitoring.alerts

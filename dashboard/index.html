@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus v3 Cluster Dashboard</title>
+    <meta name="description" content="Nexus v3 设备控制面板 — Ed25519 身份、Oracle Registry、区域 Broker 与 Agent 状态。">
+    <style>
+        :root {
+            --font-sf-display: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --bg: #060a14;
+            --surface: rgba(12, 20, 40, 0.8);
+            --surface2: rgba(20, 30, 60, 0.5);
+            --border: rgba(60, 100, 200, 0.25);
+            --border-bright: rgba(100, 160, 255, 0.5);
+            --text: #dde8f8;
+            --muted: #6b82a8;
+            --blue: #4f8eff;
+            --green: #10d98a;
+            --orange: #f5a623;
+            --red: #ff4d6d;
+            --purple: #a855f7;
+            --cyan: #22d3ee;
+            --amber: #f59e0b;
+            --cf-orange: #f48120;
+            --glow-blue: rgba(79,142,255,0.4);
+            --glow-green: rgba(16,217,138,0.3);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-sf-display);
+            background: var(--bg);
+            background-image:
+                radial-gradient(ellipse at 10% 20%, rgba(79,142,255,0.1) 0%, transparent 55%),
+                radial-gradient(ellipse at 90% 80%, rgba(168,85,247,0.08) 0%, transparent 55%),
+                radial-gradient(ellipse at 50% 50%, rgba(16,217,138,0.04) 0%, transparent 60%);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ─── HEADER (compact) ─── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.7rem 2rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(6,10,20,0.95);
+            backdrop-filter: blur(20px);
+            position: sticky;
+            top: 0; z-index: 100;
+        }
+        .logo { display: flex; align-items: center; gap: 0.8rem; }
+        .logo-icon {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem;
+            box-shadow: 0 0 14px var(--glow-blue);
+        }
+        h1 {
+            font-size: 1.1rem; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
+            background: linear-gradient(90deg, #fff 30%, var(--blue));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .tagline { font-family: var(--font-sf-display); font-size: 0.6rem; color: var(--muted); letter-spacing: 1px; }
+        .header-right { display: flex; align-items: center; gap: 1.2rem; }
+        .live-badge {
+            display: flex; align-items: center; gap: 0.4rem;
+            background: rgba(16,217,138,0.1); border: 1px solid rgba(16,217,138,0.3);
+            border-radius: 20px; padding: 0.3rem 0.8rem;
+            font-size: 0.72rem; color: var(--green); font-family: var(--font-sf-display);
+        }
+        .live-dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; animation: pulse-dot 1.5s infinite; }
+        @keyframes pulse-dot { 0%,100%{opacity:1;box-shadow:0 0 6px var(--green);}50%{opacity:.4;box-shadow:none;} }
+        #last-updated { font-size: 0.68rem; color: var(--muted); font-family: var(--font-sf-display); }
+
+        /* ─── STATS BAR (single row, compact) ─── */
+        .stats-bar {
+            display: flex;
+            gap: 1rem;
+            padding: 0.8rem 2rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(6,10,20,0.6);
+            overflow-x: auto;
+        }
+        .stat-pill {
+            display: flex; align-items: center; gap: 0.6rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.45rem 1rem;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .stat-pill-icon { font-size: 1rem; }
+        .stat-pill-val { font-family: var(--font-sf-display); font-size: 1rem; font-weight: 700; }
+        .stat-pill-lbl { font-size: 0.62rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+        /* ─── MAIN LAYOUT ─── */
+        .page {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            grid-template-rows: 1fr;
+            height: calc(100vh - 90px);
+            gap: 0;
+        }
+
+        /* ─── TOPOLOGY (main / left) ─── */
+        #topo-panel {
+            position: relative;
+            overflow: hidden;
+            border-right: 1px solid var(--border);
+        }
+        #topo-title {
+            position: absolute; top: 1rem; left: 1.4rem;
+            font-size: 0.65rem; font-weight: 700; letter-spacing: 2px;
+            text-transform: uppercase; color: var(--muted);
+            z-index: 5;
+        }
+        #topo-badge {
+            position: absolute; top: 0.9rem; right: 1.4rem;
+            font-family: var(--font-sf-display); font-size: 0.65rem;
+            background: rgba(34,211,238,0.1); color: var(--cyan);
+            border: 1px solid rgba(34,211,238,0.2); border-radius: 8px;
+            padding: 0.2rem 0.6rem; z-index: 5;
+        }
+        .topo-actions {
+            position: absolute;
+            top: 2.65rem;
+            right: 1.4rem;
+            z-index: 6;
+        }
+        .topo-action-btn {
+            font-family: var(--font-sf-display);
+            font-size: 0.58rem;
+            padding: 0.28rem 0.55rem;
+            border-radius: 8px;
+            border: 1px solid rgba(34,211,238,0.22);
+            background: rgba(6,10,20,0.72);
+            color: var(--cyan);
+            letter-spacing: 0.6px;
+            box-shadow: none;
+        }
+        .topo-action-btn:hover {
+            opacity: 1;
+            transform: translateY(-1px);
+            border-color: rgba(34,211,238,0.45);
+            background: rgba(34,211,238,0.12);
+        }
+        #topology-canvas {
+            width: 100%; height: 100%;
+            position: relative; overflow: hidden;
+            cursor: grab;
+        }
+        #topology-canvas.dragging-layout {
+            cursor: grabbing;
+        }
+        #topo-svg {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+
+        /* Device nodes */
+        .topo-node {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            cursor: grab;
+            z-index: 2;
+            touch-action: none;
+            user-select: none;
+        }
+        .topo-node.dragging {
+            cursor: grabbing;
+            z-index: 6;
+        }
+        .topo-node-inner {
+            width: 52px; height: 52px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem;
+            margin: 0 auto 0.35rem;
+            transition: all 0.4s;
+            position: relative;
+        }
+        .topo-node-inner::after {
+            content: ''; position: absolute; inset: -4px; border-radius: 50%;
+            opacity: 0; transition: opacity 0.4s;
+        }
+        .topo-node.online .topo-node-inner {
+            border-color: var(--green);
+            box-shadow: 0 0 18px rgba(16,217,138,0.4);
+            background: rgba(16,217,138,0.08);
+        }
+        .topo-node.online .topo-node-inner::after {
+            box-shadow: 0 0 0 3px rgba(16,217,138,0.2);
+            opacity: 1; animation: ring-pulse 2s infinite;
+        }
+        .topo-node.offline .topo-node-inner {
+            border-color: var(--red); background: rgba(255,77,109,0.08); opacity: 0.6;
+        }
+        .topo-node.degraded .topo-node-inner {
+            border-color: var(--orange);
+            box-shadow: 0 0 14px rgba(245,166,35,0.32);
+            background: rgba(245,166,35,0.08);
+        }
+        .topo-node.pending .topo-node-inner {
+            border-color: var(--amber);
+            box-shadow: 0 0 14px rgba(245,158,11,0.28);
+            background: rgba(245,158,11,0.08);
+        }
+        .topo-node.unknown .topo-node-inner {
+            border-color: var(--muted);
+            background: rgba(107,130,168,0.08);
+            opacity: 0.72;
+        }
+        .topo-node:hover .topo-node-inner,
+        .topo-node.selected .topo-node-inner {
+            box-shadow: 0 0 22px rgba(34,211,238,0.42);
+            transform: translateY(-2px) scale(1.04);
+        }
+        .topo-node.selected .topo-node-inner {
+            outline: 2px solid rgba(34,211,238,0.65);
+            outline-offset: 4px;
+        }
+        .topo-node.selected .topo-label { color: var(--cyan); }
+        @keyframes ring-pulse { 0%,100%{transform:scale(1);opacity:.6;}50%{transform:scale(1.15);opacity:.1;} }
+        .topo-label {
+            font-size: 0.6rem; font-weight: 700; letter-spacing: 1px;
+            text-transform: uppercase; color: var(--muted);
+        }
+        .topo-status-dot { width: 6px; height: 6px; border-radius: 50%; margin: 0.15rem auto 0; }
+
+        /* Service tag chips on topology */
+        .svc-chip {
+            position: absolute;
+            font-family: var(--font-sf-display);
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            padding: 2px 6px;
+            border-radius: 5px;
+            border: 1px solid;
+            z-index: 3;
+            white-space: nowrap;
+            cursor: default;
+            opacity: 0.85;
+            transition: opacity 0.2s;
+        }
+        .svc-chip:hover { opacity: 1; }
+        .svc-thinkcenter { background: rgba(16,217,138,0.1); border-color: rgba(16,217,138,0.35); color: var(--green); }
+        .svc-n1          { background: rgba(245,158,11,0.1);  border-color: rgba(245,158,11,0.35); color: var(--amber); }
+        .svc-oracle      { background: rgba(79,142,255,0.1);  border-color: rgba(79,142,255,0.35); color: var(--blue); }
+        .svc-cf          { background: rgba(244,129,32,0.1);  border-color: rgba(244,129,32,0.35); color: var(--cf-orange); }
+        .svc-victus      { background: rgba(168,85,247,0.1);  border-color: rgba(168,85,247,0.35); color: var(--purple); }
+        .svc-vsc         { background: rgba(34,211,238,0.1);  border-color: rgba(34,211,238,0.35); color: var(--cyan); }
+        .topo-hint {
+            position: absolute;
+            left: 1.4rem;
+            bottom: 1rem;
+            z-index: 5;
+            font-family: var(--font-sf-display);
+            font-size: 0.62rem;
+            color: var(--muted);
+            background: rgba(6,10,20,0.72);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            padding: 0.35rem 0.65rem;
+        }
+        .lan-line {
+            stroke: rgba(16,217,138,0.92);
+            stroke-width: 2.4;
+            stroke-dasharray: 6 4;
+            filter: url(#glow);
+        }
+        .wan-line {
+            opacity: 0.68;
+        }
+
+        @keyframes flow-anim { to { stroke-dashoffset: -60; } }
+
+        /* ─── RIGHT SIDEBAR ─── */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: rgba(6,10,20,0.4);
+        }
+
+        /* ─── PANEL BASE ─── */
+        .panel {
+            background: transparent;
+            border-bottom: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .panel-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.65rem 1rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.15);
+            flex-shrink: 0;
+        }
+        .panel-title { font-size: 0.65rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+        .panel-badge { font-family: var(--font-sf-display); font-size: 0.6rem; padding: 0.15rem 0.5rem; border-radius: 6px; }
+
+        /* Device list (compact) */
+        .device-list { padding: 0.5rem; overflow-y: auto; max-height: 280px; }
+        .device-list::-webkit-scrollbar { width: 3px; }
+        .device-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        .device-item {
+            display: flex; align-items: center; gap: 0.7rem;
+            padding: 0.5rem 0.7rem;
+            border-radius: 8px; margin-bottom: 0.35rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .device-item:hover,
+        .device-item.selected { border-color: var(--border-bright); background: rgba(20, 42, 75, 0.68); }
+        .device-status-ring {
+            width: 30px; height: 30px; border-radius: 50%;
+            border: 1.5px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85rem; flex-shrink: 0; transition: all 0.4s;
+        }
+        .device-status-ring.online { border-color: var(--green); box-shadow: 0 0 8px rgba(16,217,138,0.3); }
+        .device-status-ring.offline { border-color: var(--red); opacity: 0.5; }
+        .device-status-ring.degraded { border-color: var(--orange); box-shadow: 0 0 8px rgba(245,166,35,0.26); }
+        .device-status-ring.pending { border-color: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,0.22); }
+        .device-status-ring.unknown { border-color: var(--muted); opacity: 0.7; }
+        .device-info { flex: 1; min-width: 0; }
+        .device-name { font-weight: 600; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .device-meta { font-family: var(--font-sf-display); font-size: 0.6rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .device-pill { font-size: 0.58rem; padding: 0.15rem 0.45rem; border-radius: 8px; font-family: var(--font-sf-display); font-weight: 700; flex-shrink: 0; }
+        .pill-online { background: rgba(16,217,138,0.15); color: var(--green); border: 1px solid rgba(16,217,138,0.3); }
+        .pill-offline { background: rgba(255,77,109,0.1); color: var(--red); border: 1px solid rgba(255,77,109,0.2); }
+        .pill-degraded { background: rgba(245,166,35,0.12); color: var(--orange); border: 1px solid rgba(245,166,35,0.26); }
+        .pill-pending { background: rgba(245,158,11,0.12); color: var(--amber); border: 1px solid rgba(245,158,11,0.26); }
+        .pill-unknown { background: rgba(107,130,168,0.1); color: var(--muted); border: 1px solid rgba(107,130,168,0.22); }
+
+        /* Node services appear on click, keeping topology readable. */
+        .service-detail {
+            padding: 0.75rem;
+        }
+        .service-detail-head {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin-bottom: 0.6rem;
+        }
+        .service-detail-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(79,142,255,0.12);
+            border: 1px solid var(--border);
+        }
+        .service-detail-name { font-size: 0.82rem; font-weight: 700; }
+        .service-detail-role {
+            font-family: var(--font-sf-display);
+            font-size: 0.58rem;
+            color: var(--muted);
+        }
+        .service-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.35rem;
+        }
+        .service-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.42rem 0.5rem;
+            background: var(--surface2);
+            font-family: var(--font-sf-display);
+            font-size: 0.62rem;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .service-card.clickable { cursor: pointer; color: var(--cyan); border-color: rgba(34,211,238,0.35); }
+
+        /* Console (compact) */
+        .console-area { padding: 0.7rem; }
+        .console-row { display: flex; gap: 0.6rem; margin-bottom: 0.6rem; }
+        select, input, button {
+            font-family: var(--font-sf-display); font-size: 0.72rem;
+            background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+            color: var(--text); border-radius: 7px; padding: 0.45rem 0.7rem;
+            outline: none; transition: all 0.2s;
+        }
+        select:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(79,142,255,0.15); }
+        select { cursor: pointer; } input { flex: 1; }
+        button {
+            cursor: pointer; font-weight: 700; letter-spacing: 1px;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            border: none; color: #fff; padding: 0.45rem 1rem; transition: all 0.2s;
+        }
+        button:hover { opacity: 0.85; transform: translateY(-1px); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .console-output {
+            background: rgba(0,0,0,0.5); border: 1px solid var(--border);
+            border-radius: 8px; padding: 0.7rem;
+            font-family: var(--font-sf-display); font-size: 0.68rem;
+            color: var(--green); min-height: 60px; max-height: 120px;
+            overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        .console-line-muted { color: var(--muted); }
+        .console-line-error { color: var(--red); }
+
+        /* Task log (compact, scrollable) */
+        .task-log { padding: 0.5rem; overflow-y: auto; flex: 1; }
+        .task-log::-webkit-scrollbar { width: 3px; }
+        .task-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        .task-entry {
+            display: grid; grid-template-columns: auto 1fr auto;
+            gap: 0.5rem; align-items: start;
+            padding: 0.55rem 0.65rem; border-radius: 8px; margin-bottom: 0.35rem;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-left: 2px solid var(--border);
+            transition: border-color 0.3s;
+        }
+        .task-entry.completed { border-left-color: var(--green); }
+        .task-entry.running   { border-left-color: var(--blue); }
+        .task-entry.pending   { border-left-color: var(--orange); }
+        .task-entry.failed    { border-left-color: var(--red); }
+        .task-status-icon { font-size: 0.85rem; margin-top: 0.05rem; }
+        .task-device { font-size: 0.58rem; font-family: var(--font-sf-display); color: var(--blue); font-weight: 700; }
+        .task-cmd { font-family: var(--font-sf-display); font-size: 0.67rem; color: var(--text); margin: 0.1rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .task-time { font-size: 0.58rem; color: var(--muted); font-family: var(--font-sf-display); white-space: nowrap; }
+        .task-output {
+            grid-column: 1/-1; font-family: var(--font-sf-display); font-size: 0.62rem;
+            color: var(--green); background: rgba(0,0,0,0.3);
+            padding: 0.4rem 0.6rem; border-radius: 5px; margin-top: 0.2rem;
+            max-height: 60px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        .task-output.error { color: var(--red); }
+
+        /* Misc */
+        .spin { display: inline-block; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty-state { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.78rem; }
+        .empty-state .emoji { font-size: 1.8rem; margin-bottom: 0.5rem; display: block; }
+
+        @media (max-width: 900px) {
+            .page { grid-template-columns: 1fr; grid-template-rows: 60vh 1fr; }
+            #topo-panel { border-right: none; border-bottom: 1px solid var(--border); }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div>
+            <h1>Nexus</h1>
+            <div class="tagline">v3 Remote Control Plane</div>
+        </div>
+    </div>
+    <div class="header-right">
+        <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+        <div id="last-updated">--</div>
+    </div>
+</header>
+
+<!-- Compact stats bar -->
+<div class="stats-bar">
+    <div class="stat-pill">
+        <span class="stat-pill-icon">🖥️</span>
+        <span class="stat-pill-val" id="stat-total" style="color:var(--blue)">—</span>
+        <span class="stat-pill-lbl">Total Nodes</span>
+    </div>
+    <div class="stat-pill">
+        <span class="stat-pill-icon">✅</span>
+        <span class="stat-pill-val" id="stat-online" style="color:var(--green)">—</span>
+        <span class="stat-pill-lbl">Online</span>
+    </div>
+    <div class="stat-pill">
+        <span class="stat-pill-icon">⚡</span>
+        <span class="stat-pill-val" id="stat-running" style="color:var(--orange)">—</span>
+        <span class="stat-pill-lbl">Brokers</span>
+    </div>
+    <div class="stat-pill">
+        <span class="stat-pill-icon">📊</span>
+        <span class="stat-pill-val" id="stat-total-tasks" style="color:var(--purple)">—</span>
+        <span class="stat-pill-lbl">SSH Trust</span>
+    </div>
+</div>
+
+<div class="page">
+
+    <!-- ─── LEFT: TOPOLOGY (main) ─── -->
+    <div id="topo-panel">
+        <div id="topo-title">🕸 Nexus v3 Topology &amp; Service Map</div>
+        <div id="topo-badge">V3 VERIFIED</div>
+        <div class="topo-actions">
+            <button class="topo-action-btn" type="button" onclick="resetTopologyLayout()">Reset Layout</button>
+        </div>
+        <div id="topology-canvas">
+            <svg id="topo-svg"></svg>
+            <div class="topo-hint">Drag nodes · drag blank canvas to pan · click a node for services</div>
+        </div>
+    </div>
+
+    <!-- ─── RIGHT: SIDEBAR ─── -->
+    <div class="sidebar">
+
+        <!-- Node list -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">🗺 Cluster Nodes</span>
+                <span class="panel-badge" id="node-count-badge" style="background:rgba(79,142,255,0.15);color:var(--blue);">Loading...</span>
+            </div>
+            <div class="device-list" id="device-list">
+                <div class="empty-state"><span class="emoji"><span class="spin">⚙️</span></span>Connecting...</div>
+            </div>
+        </div>
+
+        <!-- Selected node services -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">🧩 Node Services</span>
+                <span class="panel-badge" id="service-badge" style="background:rgba(34,211,238,0.1);color:var(--cyan);">Click node</span>
+            </div>
+            <div class="service-detail" id="service-detail">
+                <div class="empty-state"><span class="emoji">👆</span>Click a node to inspect services</div>
+            </div>
+        </div>
+
+        <!-- Console -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">💻 Console</span>
+            </div>
+            <div class="console-area">
+                <div class="console-row">
+                    <select id="target-device"><option value="">Select Node...</option></select>
+                </div>
+                <div class="console-row">
+                    <input id="cmd-input" type="text" placeholder="Read-only: use ChatGPT Action / MCP" autocomplete="off">
+                    <button id="send-btn" onclick="sendCommand()">INFO</button>
+                </div>
+                <div class="console-output" id="console-output"><span class="console-line-muted">// Read-only public dashboard. Use ChatGPT Action / MCP for execution.</span></div>
+            </div>
+        </div>
+
+        <!-- Task log (flex grows) -->
+        <div class="panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+            <div class="panel-header">
+                <span class="panel-title">📋 Task History</span>
+                <span class="panel-badge" id="task-badge" style="background:rgba(245,166,35,0.1);color:var(--orange);">—</span>
+            </div>
+            <div class="task-log" id="task-log">
+                <div class="empty-state"><span class="emoji">📭</span>No recent tasks</div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+// ─── CONFIG ───
+// Static public dashboard snapshot. Do not expose API keys or private tokens here.
+const POLL_INTERVAL = 30000;
+let devicesData = [];
+let activeFlows = new Set(['oracle', 'thinkcenter', 'n1']);
+let selectedNodeId = null;
+let statusSourceLabel = 'snapshot';
+let lastStatusFetchedAt = null;
+const LAYOUT_STORAGE_KEY = 'nexus:v3-dashboard-layout';
+let layoutPan = { x: 0, y: 0 };
+let nodePositions = {};
+let dragState = null;
+const STATUS_ICONS = { completed: '✅', running: '🔄', pending: '⏳', failed: '❌' };
+
+const DEVICE_META = {
+    oracle:      { icon: '☁️', os: 'Ubuntu 22.04', role: 'Public Registry · EU Broker · Agent', location: 'Oracle Cloud / Tailscale' },
+    thinkcenter: { icon: '🖥️', os: 'Ubuntu 24.04', role: 'CN Broker · Agent · OpenWrt control', location: 'Beijing, China' },
+    n1:          { icon: '📡', os: 'iStoreOS / OpenWrt', role: 'OpenWrt Agent', location: 'Beijing LAN' },
+    ax3600:      { icon: '📶', os: 'OpenWrt', role: 'Agent or ThinkCenter-managed target', location: 'Beijing LAN' },
+    vsc:         { icon: '🔬', os: 'RHEL / HPC', role: 'EU compute target', location: 'KU Leuven VSC' },
+    victus:      { icon: '🐧', os: 'WSL2', role: 'EU workstation target', location: 'Leuven' },
+};
+const DEVICE_SORT_ORDER = ['oracle', 'thinkcenter', 'n1', 'ax3600', 'vsc', 'victus'];
+const STATIC_UPDATED_AT = '2026-08-09 01:31 Europe/Brussels';
+// ─── FETCH ───
+function isoMinutesAgo(mins) { return new Date(Date.now() - mins * 60000).toISOString(); }
+
+function fallbackDevicesSnapshot() {
+    return [
+        { device_id: 'oracle', name: 'Oracle', status: 'online', last_seen: isoMinutesAgo(1), ip: '100.116.89.65' },
+        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'online', last_seen: isoMinutesAgo(2), ip: '100.103.12.14' },
+        { device_id: 'n1', name: 'N1', status: 'online', last_seen: isoMinutesAgo(3), ip: '100.90.67.12' },
+        { device_id: 'ax3600', name: 'AX3600', status: 'pending', last_seen: isoMinutesAgo(360), ip: '' },
+        { device_id: 'vsc', name: 'VSC', status: 'pending', last_seen: isoMinutesAgo(360), ip: '' },
+        { device_id: 'victus', name: 'Victus', status: 'pending', last_seen: isoMinutesAgo(360), ip: '' },
+    ];
+}
+
+function normalizeDeviceRecord(raw) {
+    const deviceId = String(raw.device_id || raw.id || raw.name || '').toLowerCase();
+    const meta = DEVICE_META[deviceId] || {};
+    return {
+        ...raw,
+        device_id: deviceId,
+        name: raw.name || meta.label || raw.hostname || deviceId,
+        status: String(raw.runtime_status || raw.status || 'unknown').toLowerCase(),
+        last_seen: raw.last_seen || raw.lastSeen || raw.heartbeat_at || raw.updated_at || raw.updatedAt || raw.approved_at || raw.created_at || '',
+        ip: raw.ip || raw.public_ip || raw.tailscale_ip || '',
+    };
+}
+
+async function fetchStatusJson() {
+    if (location.protocol === 'file:') return null;
+    const response = await fetch(`/status.json?ts=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const devices = Array.isArray(payload) ? payload : payload.devices;
+    if (!Array.isArray(devices)) return null;
+    statusSourceLabel = payload.source || 'status.json';
+    lastStatusFetchedAt = payload.updated_at || new Date().toISOString();
+    return devices.map(normalizeDeviceRecord).filter(d => d.device_id);
+}
+
+async function fetchDevices() {
+    try {
+        const liveDevices = await fetchStatusJson();
+        if (liveDevices?.length) return liveDevices;
+    } catch (err) {
+        console.warn('Using snapshot device status because live status fetch failed', err);
+    }
+    statusSourceLabel = 'snapshot';
+    lastStatusFetchedAt = new Date().toISOString();
+    return fallbackDevicesSnapshot();
+}
+async function fetchTasks() {
+    return [
+        { target_device: 'oracle', status: 'completed', command: 'systemctl is-active nexus-v3-registry nexus-v3-eu-broker nexus-v3-agent', output: 'active\nactive\nactive', created_at: isoMinutesAgo(5) },
+        { target_device: 'oracle', status: 'completed', command: 'curl http://127.0.0.1:18101/v3/health && curl http://127.0.0.1:18102/v3/health', output: 'Registry 3.0.0 OK; EU Broker 3.0.1 OK', created_at: isoMinutesAgo(6) },
+        { target_device: 'cluster', status: 'completed', command: 'GET /v3/ssh/authorized-keys', output: 'approved SSH trust: n1, oracle, thinkcenter', created_at: isoMinutesAgo(8) },
+        { target_device: 'nexus.bings.app', status: 'completed', command: 'Cloudflare Worker + R2 dashboard', output: 'Basic Auth enabled; public dashboard assets verified', created_at: isoMinutesAgo(10) },
+    ];
+}
+async function postCommand() { return { ok: false, reason: 'public dashboard is read-only' }; }
+async function pollTask() { return null; }
+
+function statusAgeMs(device) {
+    if (!device?.last_seen) return Infinity;
+    const ts = new Date(device.last_seen).getTime();
+    return Number.isFinite(ts) ? Date.now() - ts : Infinity;
+}
+
+function getDeviceVisualState(device) {
+    if (!device) {
+        return { key: 'unknown', label: 'UNKNOWN', color: '#6b82a8', lineColor: 'rgba(107,130,168,0.28)' };
+    }
+
+    const status = String(device.status || '').toLowerCase();
+    const age = statusAgeMs(device);
+    if (['pending', 'registered', 'waiting'].includes(status)) {
+        return { key: 'pending', label: 'PENDING', color: '#f59e0b', lineColor: 'rgba(245,158,11,0.38)' };
+    }
+    if (['offline', 'failed', 'error', 'rejected', 'revoked'].includes(status)) {
+        return { key: 'offline', label: 'OFFLINE', color: '#ff4d6d', lineColor: 'rgba(255,77,109,0.28)' };
+    }
+    if (['online', 'active', 'running', 'approved'].includes(status)) {
+        if (age <= 90_000) return { key: 'online', label: 'ONLINE', color: '#10d98a', lineColor: 'rgba(16,217,138,0.48)' };
+        if (age <= 300_000) return { key: 'degraded', label: 'DEGRADED', color: '#f5a623', lineColor: 'rgba(245,166,35,0.38)' };
+        return { key: 'offline', label: 'STALE', color: '#ff4d6d', lineColor: 'rgba(255,77,109,0.26)' };
+    }
+    if (age <= 90_000) return { key: 'online', label: 'ONLINE', color: '#10d98a', lineColor: 'rgba(16,217,138,0.48)' };
+    if (age <= 300_000) return { key: 'degraded', label: 'DEGRADED', color: '#f5a623', lineColor: 'rgba(245,166,35,0.38)' };
+    return { key: 'unknown', label: 'UNKNOWN', color: '#6b82a8', lineColor: 'rgba(107,130,168,0.28)' };
+}
+
+// ─── TOPOLOGY ───
+// Hub definitions
+const TOPO_HUBS = {
+    china:      { x: 27, y: 52, label: 'China LAN',      icon: '🇨🇳', color: '#f59e0b' },
+    cloudflare: { x: 50, y: 50, label: 'Cloudflare',     icon: '🔶', color: '#f48120' },
+    global:     { x: 78, y: 50, label: 'Global Network', icon: '🌐',  color: '#4f8eff' },
+};
+
+// Device nodes with services listed
+const TOPO_DEVICES = {
+    oracle: {
+        hub: 'global', x: 96, y: 28, icon: '☁️', label: 'Oracle', geo: 'Tailscale 100.116.89.65',
+        services: [
+            { name: 'registry :18101', cls: 'svc-oracle', url: '' },
+            { name: 'eu-broker :18102', cls: 'svc-oracle', url: '' },
+            { name: 'nexus-agent', cls: 'svc-oracle', url: '' },
+        ]
+    },
+    thinkcenter: {
+        hub: 'china', x: 9, y: 32, icon: '🖥️', label: 'ThinkCenter', geo: 'CN control hub',
+        services: [
+            { name: 'cn-broker', cls: 'svc-thinkcenter', url: '' },
+            { name: 'nexus-agent', cls: 'svc-thinkcenter', url: '' },
+            { name: 'OpenWrt SSH', cls: 'svc-thinkcenter', url: '' },
+            { name: 'Jellyfin', cls: 'svc-thinkcenter', url: 'https://media.bings.app' },
+        ]
+    },
+    n1: {
+        hub: 'china', x: 9, y: 72, icon: '📡', label: 'N1', geo: 'OpenWrt Agent',
+        services: [
+            { name: 'nexus-agent', cls: 'svc-n1', url: '' },
+            { name: 'iStoreOS', cls: 'svc-n1', url: '' },
+            { name: 'SSH trusted', cls: 'svc-n1', url: '' },
+        ]
+    },
+    ax3600: {
+        hub: 'china', x: 29, y: 52, icon: '📶', label: 'AX3600', geo: 'LAN bridge to TC + N1',
+        services: [
+            { name: 'LAN: ThinkCenter', cls: 'svc-n1', url: '' },
+            { name: 'LAN: N1', cls: 'svc-n1', url: '' },
+            { name: 'agent optional', cls: 'svc-n1', url: '' },
+        ]
+    },
+    vsc: {
+        hub: 'global', x: 96, y: 72, icon: '🔬', label: 'VSC HPC', geo: 'KU Leuven',
+        services: [
+            { name: 'compute target', cls: 'svc-vsc', url: '' },
+            { name: 'pending agent', cls: 'svc-vsc', url: '' },
+        ]
+    },
+    victus: {
+        hub: 'global', x: 62, y: 76, icon: '🐧', label: 'Victus', geo: 'Leuven',
+        services: [
+            { name: 'workstation', cls: 'svc-victus', url: '' },
+            { name: 'pending agent', cls: 'svc-victus', url: '' },
+        ]
+    },
+};
+
+// Cloudflare services (attached to the CF hub node)
+
+function isFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function getNodePercent(deviceId) {
+    const saved = nodePositions[deviceId];
+    if (saved && isFiniteNumber(saved.x) && isFiniteNumber(saved.y)) return saved;
+    const cfg = TOPO_DEVICES[deviceId];
+    return cfg ? { x: cfg.x, y: cfg.y } : { x: 50, y: 50 };
+}
+
+function pointFromPercent(point, width, height) {
+    return {
+        x: point.x / 100 * width + layoutPan.x,
+        y: point.y / 100 * height + layoutPan.y,
+    };
+}
+
+function loadTopologyLayout() {
+    try {
+        const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved?.layoutPan && isFiniteNumber(saved.layoutPan.x) && isFiniteNumber(saved.layoutPan.y)) {
+            layoutPan = { x: saved.layoutPan.x, y: saved.layoutPan.y };
+        }
+        if (saved?.nodePositions && typeof saved.nodePositions === 'object') {
+            const clean = {};
+            Object.keys(TOPO_DEVICES).forEach(id => {
+                const pos = saved.nodePositions[id];
+                if (pos && isFiniteNumber(pos.x) && isFiniteNumber(pos.y)) {
+                    clean[id] = {
+                        x: clamp(pos.x, -10, 110),
+                        y: clamp(pos.y, -10, 110),
+                    };
+                }
+            });
+            nodePositions = clean;
+        }
+    } catch (err) {
+        console.warn('Ignoring invalid topology layout', err);
+        layoutPan = { x: 0, y: 0 };
+        nodePositions = {};
+    }
+}
+
+function saveTopologyLayout() {
+    try {
+        localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ layoutPan, nodePositions }));
+    } catch (err) {
+        console.warn('Unable to save topology layout', err);
+    }
+}
+
+function resetTopologyLayout() {
+    layoutPan = { x: 0, y: 0 };
+    nodePositions = {};
+    saveTopologyLayout();
+    renderTopology(devicesData);
+    setSelectedNode(selectedNodeId);
+}
+
+function setupTopologyInteractions() {
+    const canvas = document.getElementById('topology-canvas');
+    if (!canvas || canvas.dataset.dragReady === '1') return;
+    canvas.dataset.dragReady = '1';
+    canvas.addEventListener('pointerdown', beginLayoutDrag);
+}
+
+function beginLayoutDrag(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (event.target.closest('.topo-node, .svc-chip, .topo-actions, .topo-hint')) return;
+    const canvas = document.getElementById('topology-canvas');
+    dragState = {
+        type: 'layout',
+        startX: event.clientX,
+        startY: event.clientY,
+        panStart: { ...layoutPan },
+        moved: false,
+    };
+    canvas.classList.add('dragging-layout');
+    document.addEventListener('pointermove', onTopologyPointerMove);
+    document.addEventListener('pointerup', endTopologyDrag);
+    document.addEventListener('pointercancel', endTopologyDrag);
+    event.preventDefault();
+}
+
+function beginNodeDrag(event, deviceId) {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.stopPropagation();
+    event.preventDefault();
+    dragState = {
+        type: 'node',
+        key: deviceId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startPercent: getNodePercent(deviceId),
+        moved: false,
+    };
+    event.currentTarget.classList.add('dragging');
+    document.addEventListener('pointermove', onTopologyPointerMove);
+    document.addEventListener('pointerup', endTopologyDrag);
+    document.addEventListener('pointercancel', endTopologyDrag);
+}
+
+function onTopologyPointerMove(event) {
+    if (!dragState) return;
+    const canvas = document.getElementById('topology-canvas');
+    const width = Math.max(canvas.offsetWidth, 1);
+    const height = Math.max(canvas.offsetHeight, 1);
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) dragState.moved = true;
+
+    if (dragState.type === 'layout') {
+        layoutPan = {
+            x: dragState.panStart.x + dx,
+            y: dragState.panStart.y + dy,
+        };
+    } else if (dragState.type === 'node') {
+        nodePositions[dragState.key] = {
+            x: clamp(dragState.startPercent.x + dx / width * 100, -10, 110),
+            y: clamp(dragState.startPercent.y + dy / height * 100, -10, 110),
+        };
+    }
+
+    renderTopology(devicesData);
+}
+
+function endTopologyDrag() {
+    if (!dragState) return;
+    const endedState = dragState;
+    dragState = null;
+    document.removeEventListener('pointermove', onTopologyPointerMove);
+    document.removeEventListener('pointerup', endTopologyDrag);
+    document.removeEventListener('pointercancel', endTopologyDrag);
+    const canvas = document.getElementById('topology-canvas');
+    if (canvas) canvas.classList.remove('dragging-layout');
+    document.querySelectorAll('.topo-node.dragging').forEach(node => node.classList.remove('dragging'));
+    if (endedState.moved) saveTopologyLayout();
+    if (!endedState.moved && endedState.type === 'node') toggleNodeServices(endedState.key);
+    renderTopology(devicesData);
+    setSelectedNode(selectedNodeId);
+}
+
+function svgEl(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+
+function drawDashedLine(svg, x1, y1, x2, y2, color, fast, pathId) {
+    const line = svgEl('line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', fast ? '2' : '1.5');
+    line.setAttribute('stroke-dasharray', fast ? '10 4' : '5 5');
+    line.style.animation = `flow-anim ${fast ? '1s' : '3.5s'} linear infinite`;
+    svg.appendChild(line);
+
+    if (pathId) {
+        const pathEl = svgEl('path');
+        pathEl.setAttribute('id', pathId);
+        pathEl.setAttribute('d', `M${x1},${y1} L${x2},${y2}`);
+        pathEl.setAttribute('stroke', 'none'); pathEl.setAttribute('fill', 'none');
+        svg.appendChild(pathEl);
+
+        const pkt = svgEl('circle');
+        pkt.setAttribute('r', '3.5');
+        pkt.setAttribute('fill', color);
+        pkt.setAttribute('filter', 'url(#glow)');
+        const anim = svgEl('animateMotion');
+        anim.setAttribute('dur', '1s');
+        anim.setAttribute('repeatCount', 'indefinite');
+        const mp = svgEl('mpath');
+        mp.setAttribute('href', `#${pathId}`);
+        anim.appendChild(mp);
+        pkt.appendChild(anim);
+        svg.appendChild(pkt);
+    }
+}
+
+function renderTopology(devices) {
+    const canvas = document.getElementById('topology-canvas');
+    const svg = document.getElementById('topo-svg');
+    const w = canvas.offsetWidth, h = canvas.offsetHeight;
+    if (w === 0 || h === 0) return;
+
+    canvas.querySelectorAll('.topo-node, .svc-chip').forEach(n => n.remove());
+    svg.innerHTML = '';
+
+    // Defs
+    const defs = svgEl('defs');
+    defs.innerHTML = `
+        <filter id="glow"><feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="glow-lg"><feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    `;
+    svg.appendChild(defs);
+
+    const deviceMap = {};
+    devices.forEach(d => { deviceMap[d.device_id] = d; });
+
+    // Compute hub pixel positions
+    const hubPos = {};
+    Object.entries(TOPO_HUBS).forEach(([k, hub]) => {
+        hubPos[k] = pointFromPercent(hub, w, h);
+    });
+
+    // ── Hub-to-hub backbone lines ──
+    // China → Cloudflare (Tunnel)
+    const cfGlowLine = svgEl('line');
+    cfGlowLine.setAttribute('x1', hubPos.china.x); cfGlowLine.setAttribute('y1', hubPos.china.y);
+    cfGlowLine.setAttribute('x2', hubPos.cloudflare.x); cfGlowLine.setAttribute('y2', hubPos.cloudflare.y);
+    cfGlowLine.setAttribute('stroke', 'rgba(244,129,32,0.12)'); cfGlowLine.setAttribute('stroke-width', '12');
+    cfGlowLine.setAttribute('filter', 'url(#glow-lg)');
+    svg.appendChild(cfGlowLine);
+    drawDashedLine(svg, hubPos.china.x, hubPos.china.y, hubPos.cloudflare.x, hubPos.cloudflare.y,
+        'rgba(244,129,32,0.65)', true, 'path-cf-china');
+
+    // Cloudflare → Global
+    const glGlowLine = svgEl('line');
+    glGlowLine.setAttribute('x1', hubPos.cloudflare.x); glGlowLine.setAttribute('y1', hubPos.cloudflare.y);
+    glGlowLine.setAttribute('x2', hubPos.global.x); glGlowLine.setAttribute('y2', hubPos.global.y);
+    glGlowLine.setAttribute('stroke', 'rgba(79,142,255,0.12)'); glGlowLine.setAttribute('stroke-width', '12');
+    glGlowLine.setAttribute('filter', 'url(#glow-lg)');
+    svg.appendChild(glGlowLine);
+    drawDashedLine(svg, hubPos.cloudflare.x, hubPos.cloudflare.y, hubPos.global.x, hubPos.global.y,
+        'rgba(100,180,255,0.65)', true, 'path-cf-global');
+
+    // Backbone labels
+    function svgText(x, y, txt, fill, size, anchor, rotate) {
+        const el = svgEl('text');
+        el.setAttribute('x', x); el.setAttribute('y', y);
+        el.setAttribute('text-anchor', anchor || 'middle');
+        el.setAttribute('fill', fill); el.setAttribute('font-size', size || '9');
+        el.setAttribute('font-family', '"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif');
+        el.setAttribute('font-weight', '700');
+        if (rotate) el.setAttribute('transform', `rotate(${rotate}, ${x}, ${y})`);
+        el.textContent = txt;
+        return el;
+    }
+    const midCF_left  = { x: (hubPos.china.x + hubPos.cloudflare.x) / 2, y: hubPos.china.y - 16 };
+    const midCF_right = { x: (hubPos.cloudflare.x + hubPos.global.x) / 2, y: hubPos.cloudflare.y - 16 };
+    svg.appendChild(svgText(midCF_left.x,  midCF_left.y,  '⚡ CF Tunnel',  'rgba(244,129,32,0.6)', '9'));
+    svg.appendChild(svgText(midCF_right.x, midCF_right.y, '⚡ CF Tunnel',  'rgba(100,180,255,0.6)', '9'));
+
+    // ── Draw hub nodes (SVG circles) ──
+    Object.entries(TOPO_HUBS).forEach(([key, hub]) => {
+        const hx = hubPos[key].x, hy = hubPos[key].y;
+        const isCF = key === 'cloudflare';
+        const r1 = isCF ? 30 : 26, r2 = isCF ? 36 : 32;
+
+        // Outer spinning ring
+        const ring = svgEl('circle');
+        ring.setAttribute('cx', hx); ring.setAttribute('cy', hy); ring.setAttribute('r', r2);
+        ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', hub.color);
+        ring.setAttribute('stroke-width', '1.5'); ring.setAttribute('stroke-dasharray', '4 3');
+        ring.setAttribute('opacity', '0.4');
+        ring.style.animation = `flow-anim ${isCF ? '5s' : '7s'} linear infinite`;
+        svg.appendChild(ring);
+
+        // Fill circle
+        const fill = isCF ? '244,129,32' : key === 'china' ? '245,158,11' : '79,142,255';
+        const circle = svgEl('circle');
+        circle.setAttribute('cx', hx); circle.setAttribute('cy', hy); circle.setAttribute('r', r1);
+        circle.setAttribute('fill', `rgba(${fill},0.13)`);
+        circle.setAttribute('stroke', hub.color); circle.setAttribute('stroke-width', '2');
+        circle.setAttribute('filter', 'url(#glow)');
+        svg.appendChild(circle);
+
+        // Icon
+        const icon = svgEl('text');
+        icon.setAttribute('x', hx); icon.setAttribute('y', hy + (isCF ? 6 : 5));
+        icon.setAttribute('text-anchor', 'middle');
+        icon.setAttribute('font-size', isCF ? '20' : '16');
+        icon.textContent = hub.icon;
+        svg.appendChild(icon);
+
+        // Label
+        const lbl = svgEl('text');
+        lbl.setAttribute('x', hx); lbl.setAttribute('y', hy + r2 + 16);
+        lbl.setAttribute('text-anchor', 'middle');
+        lbl.setAttribute('fill', hub.color);
+        lbl.setAttribute('font-size', '8');
+        lbl.setAttribute('font-family', '"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif');
+        lbl.setAttribute('font-weight', '700');
+        lbl.setAttribute('letter-spacing', '1');
+        lbl.textContent = hub.label.toUpperCase();
+        svg.appendChild(lbl);
+    });
+
+
+
+
+    // Pre-calculate device positions for cross-links
+    const devPos = {};
+    Object.entries(TOPO_DEVICES).forEach(([key, cfg]) => {
+        devPos[key] = pointFromPercent(getNodePercent(key), w, h);
+    });
+
+    const cfx = hubPos.cloudflare.x, cfy = hubPos.cloudflare.y;
+
+    // ── Advanced CF Relationships ──
+    if (devPos.oracle) {
+        drawDashedLine(svg, cfx, cfy, devPos.oracle.x, devPos.oracle.y, 'rgba(79,142,255,0.3)', true, 'path-cf-proxy');
+        svg.appendChild(svgText((cfx + devPos.oracle.x)/2, (cfy + devPos.oracle.y)/2 - 10, '🔄 Reverse Proxy', 'rgba(79,142,255,0.9)', '7', 'middle', -12));
+    }
+    if (devPos.thinkcenter) {
+        drawDashedLine(svg, cfx, cfy, devPos.thinkcenter.x, devPos.thinkcenter.y, 'rgba(244,129,32,0.3)', true, 'path-cf-tunnel');
+        svg.appendChild(svgText((cfx + devPos.thinkcenter.x)/2, (cfy + devPos.thinkcenter.y)/2 - 10, '🚇 CF Tunnel', 'rgba(244,129,32,0.9)', '7', 'middle', 15));
+    }
+
+    // R2 Storage Sub-node
+    const r2y = cfy - 65;
+    drawDashedLine(svg, cfx, cfy, cfx, r2y, 'rgba(244,129,32,0.5)', false);
+    const r2Circle = svgEl('circle');
+    r2Circle.setAttribute('cx', cfx); r2Circle.setAttribute('cy', r2y); r2Circle.setAttribute('r', '16');
+    r2Circle.setAttribute('fill', 'rgba(244,129,32,0.15)'); r2Circle.setAttribute('stroke', '#f48120');
+    svg.appendChild(r2Circle);
+    svg.appendChild(svgText(cfx, r2y + 4, '🪣', '#fff', '12'));
+    svg.appendChild(svgText(cfx, r2y - 22, 'R2 STORAGE', '#f48120', '7'));
+
+    ['nexus.bings.app', 'install.sh', 'openapi.json'].forEach((name, i) => {
+        const chip = document.createElement('div');
+        chip.className = 'svc-chip svc-cf';
+        chip.textContent = name;
+        chip.style.left = (cfx + 24) + 'px';
+        chip.style.top = (r2y - 14 + i * 18) + 'px';
+        canvas.appendChild(chip);
+    });
+
+    // Workers Sub-node
+    const wky = cfy + 65;
+    drawDashedLine(svg, cfx, cfy, cfx, wky, 'rgba(244,129,32,0.5)', false);
+    const wkCircle = svgEl('circle');
+    wkCircle.setAttribute('cx', cfx); wkCircle.setAttribute('cy', wky); wkCircle.setAttribute('r', '16');
+    wkCircle.setAttribute('fill', 'rgba(244,129,32,0.15)'); wkCircle.setAttribute('stroke', '#f48120');
+    svg.appendChild(wkCircle);
+    svg.appendChild(svgText(cfx, wky + 4, '⚡', '#fff', '12'));
+    svg.appendChild(svgText(cfx, wky + 26, 'WORKERS', '#f48120', '7'));
+
+    // ── Device nodes ──
+    // First draw LAN connections. N1 and ThinkCenter connect through AX3600, not directly.
+    function drawLanLine(id1, id2, label) {
+        if (!devPos[id1] || !devPos[id2]) return;
+        const p1 = devPos[id1], p2 = devPos[id2];
+        const line = svgEl('line');
+        line.setAttribute('x1', p1.x); line.setAttribute('y1', p1.y);
+        line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y);
+        line.setAttribute('class', 'lan-line');
+        svg.appendChild(line);
+        if (label) {
+            svg.appendChild(svgText((p1.x+p2.x)/2 + 10, (p1.y+p2.y)/2 + 4, label, '#10d98a', '9'));
+        }
+    }
+    drawLanLine('thinkcenter', 'ax3600', 'LAN');
+    drawLanLine('n1', 'ax3600', 'LAN');
+
+    Object.entries(TOPO_DEVICES).forEach(([key, cfg]) => {
+        const device = deviceMap[key];
+        const visual = getDeviceVisualState(device);
+        const isActive = activeFlows.has(key);
+        const hub = TOPO_HUBS[cfg.hub];
+        const hp = hubPos[cfg.hub];
+        const pos = devPos[key];
+        const dx = pos.x;
+        const dy = pos.y;
+        const lineColor = isActive && visual.key === 'online' ? hub.color : visual.lineColor;
+
+        // Spoke from hub to device
+        drawDashedLine(svg, hp.x, hp.y, dx, dy, lineColor, isActive, isActive ? `path-${key}` : null);
+
+        // Geo label
+        if (cfg.geo) {
+            const ip = device?.ip || device?.public_ip;
+            const dynamicGeo = (ip && geoCache[ip]) ? geoCache[ip] : cfg.geo;
+            const labelY = dy > h / 2 ? dy + 42 : dy - 36;
+            svg.appendChild(svgText(dx, labelY, dynamicGeo, 'rgba(107,130,168,0.75)', '8'));
+        }
+
+        // Device DOM node
+        const node = document.createElement('div');
+        const isDragging = dragState?.type === 'node' && dragState.key === key;
+        node.className = `topo-node ${visual.key} ${selectedNodeId === key ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`;
+        node.style.left = dx + 'px'; node.style.top = dy + 'px';
+        node.dataset.id = key;
+        node.title = `${cfg.label}: ${visual.label}${device?.last_seen ? ` · ${timeSince(device.last_seen)}` : ''}`;
+        node.innerHTML = `
+            <div class="topo-node-inner">${cfg.icon}</div>
+            <div class="topo-label">${cfg.label}</div>
+            <div class="topo-status-dot" style="background:${visual.color}"></div>
+        `;
+        node.addEventListener('pointerdown', event => beginNodeDrag(event, key));
+        canvas.appendChild(node);
+    });
+}
+
+function setSelectedNode(deviceId) {
+    selectedNodeId = deviceId;
+    updateServiceDetail();
+    document.querySelectorAll('.topo-node[data-id]').forEach(node => {
+        node.classList.toggle('selected', node.dataset.id === selectedNodeId);
+    });
+    document.querySelectorAll('.device-item[data-id]').forEach(row => {
+        row.classList.toggle('selected', row.dataset.id === selectedNodeId);
+    });
+}
+
+function toggleNodeServices(deviceId) {
+    setSelectedNode(selectedNodeId === deviceId ? null : deviceId);
+}
+
+function selectNode(deviceId) {
+    setSelectedNode(deviceId);
+}
+
+function updateServiceDetail() {
+    const cfg = TOPO_DEVICES[selectedNodeId];
+    const meta = DEVICE_META[selectedNodeId] || {};
+    const container = document.getElementById('service-detail');
+    const badge = document.getElementById('service-badge');
+    if (!container || !badge) return;
+    if (!cfg) {
+        badge.textContent = 'Click node';
+        container.innerHTML = '<div class="empty-state"><span class="emoji">👆</span>Click a node to inspect services</div>';
+        return;
+    }
+
+    const services = cfg.services || [];
+    const device = devicesData.find(d => d.device_id === selectedNodeId);
+    const visual = getDeviceVisualState(device);
+    badge.textContent = `${visual.label} · ${services.length} svc`;
+    const serviceCards = services.map(svc => {
+        const clickable = svc.url ? ' clickable' : '';
+        const clickAttr = svc.url ? ` onclick="window.open('${svc.url}', '_blank')"` : '';
+        return `<div class="service-card${clickable}"${clickAttr}>${escHtml(svc.name)}</div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="service-detail-head">
+            <div class="service-detail-icon">${cfg.icon}</div>
+            <div>
+                <div class="service-detail-name">${escHtml(cfg.label)}</div>
+                <div class="service-detail-role">${escHtml(visual.label)} · ${escHtml(meta.role || cfg.geo || '')}</div>
+            </div>
+        </div>
+        <div class="service-grid">${serviceCards || '<div class="service-card">No public service</div>'}</div>
+    `;
+}
+
+// ─── DEVICE LIST ───
+function timeSince(dateStr) {
+    if (!dateStr) return 'never';
+    const d = new Date(dateStr), now = new Date();
+    const secs = Math.floor((now - d) / 1000);
+    if (secs < 60) return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs/60)}m ago`;
+    return `${Math.floor(secs/3600)}h ago`;
+}
+
+function renderDevices(devices) {
+    const raw = devices.filter(d => d.device_id !== 'test');
+    raw.sort((a, b) => {
+        const ia = DEVICE_SORT_ORDER.indexOf(a.device_id);
+        const ib = DEVICE_SORT_ORDER.indexOf(b.device_id);
+        if (ia === -1 && ib === -1) return a.device_id.localeCompare(b.device_id);
+        if (ia === -1) return 1; if (ib === -1) return -1;
+        return ia - ib;
+    });
+    devicesData = raw;
+
+    const container = document.getElementById('device-list');
+    const select = document.getElementById('target-device');
+    const online = devicesData.filter(d => getDeviceVisualState(d).key === 'online').length;
+    document.getElementById('stat-total').textContent = devicesData.length;
+    document.getElementById('stat-online').textContent = online;
+    document.getElementById('node-count-badge').textContent = `${online}/${devicesData.length} Online`;
+
+    const currentVal = select.value;
+    if (select.options.length - 1 !== devicesData.length) {
+        select.innerHTML = '<option value="">Select Node...</option>';
+        devicesData.forEach(d => {
+            const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '🖥️' };
+            const opt = document.createElement('option');
+            opt.value = d.device_id;
+            opt.textContent = `${meta.icon} ${d.name || d.device_id}`;
+            select.appendChild(opt);
+        });
+    }
+    if (currentVal) select.value = currentVal;
+
+    const existingRows = {};
+    container.querySelectorAll('.device-item[data-id]').forEach(el => { existingRows[el.dataset.id] = el; });
+    const seenIds = new Set();
+
+    devicesData.forEach(d => {
+        const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '🖥️', os: 'Unknown', role: '', location: '' };
+        const visual = getDeviceVisualState(d);
+        seenIds.add(d.device_id);
+
+        if (existingRows[d.device_id]) {
+            const row = existingRows[d.device_id];
+            row.classList.toggle('selected', d.device_id === selectedNodeId);
+            row.querySelector('.device-status-ring').className = `device-status-ring ${visual.key}`;
+            const spans = row.querySelectorAll('.device-meta');
+            if (spans[1]) spans[1].textContent = `Last seen: ${timeSince(d.last_seen)}`;
+            const pill = row.querySelector('.device-pill');
+            pill.className = `device-pill pill-${visual.key}`;
+            pill.textContent = visual.label;
+            container.appendChild(row);
+        } else {
+            const el = document.createElement('div');
+            el.className = `device-item ${d.device_id === selectedNodeId ? 'selected' : ''}`;
+            el.dataset.id = d.device_id;
+            el.onclick = () => toggleNodeServices(d.device_id);
+            el.innerHTML = `
+                <div class="device-status-ring ${visual.key}">${meta.icon}</div>
+                <div class="device-info">
+                    <div class="device-name">${d.name || d.device_id}</div>
+                    <div class="device-meta">${meta.os} · ${(d.ip || d.public_ip) && geoCache[d.ip || d.public_ip] ? geoCache[d.ip || d.public_ip] : meta.location}</div>
+                    <div class="device-meta">Last seen: ${timeSince(d.last_seen)}</div>
+                </div>
+                <span class="device-pill pill-${visual.key}">${visual.label}</span>
+            `;
+            container.appendChild(el);
+        }
+    });
+    Object.entries(existingRows).forEach(([id, el]) => { if (!seenIds.has(id)) el.remove(); });
+    updateServiceDetail();
+}
+
+// ─── TASK LOG ───
+function renderTasks(tasks) {
+    const container = document.getElementById('task-log');
+    const running = tasks.filter(t => t.status === 'running' || t.status === 'pending').length;
+    const today = tasks.filter(t => {
+        const d = new Date(t.created_at), now = new Date();
+        return d.toDateString() === now.toDateString();
+    }).length;
+    document.getElementById('stat-running').textContent = 'EU/CN';
+    document.getElementById('stat-total-tasks').textContent = '3';
+    document.getElementById('task-badge').textContent = `${tasks.length} recent`;
+
+    activeFlows = new Set(['oracle', 'thinkcenter', 'n1', 'ax3600']);
+
+    if (tasks.length === 0) {
+        container.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>No recent tasks</div>';
+        return;
+    }
+    container.innerHTML = '';
+    tasks.forEach(t => {
+        const icon = STATUS_ICONS[t.status] || '❓';
+        const device = (t.target_device || 'unknown').toLowerCase();
+        const el = document.createElement('div');
+        el.className = `task-entry ${t.status}`;
+        let outputHtml = '';
+        if (t.output && t.output.trim()) {
+            const isErr = t.status === 'failed';
+            outputHtml = `<div class="task-output ${isErr ? 'error' : ''}">${escHtml(t.output.trim().slice(0, 500))}</div>`;
+        }
+        el.innerHTML = `
+            <div class="task-status-icon">${icon}</div>
+            <div>
+                <div class="task-device">${t.target_device || 'unknown'}</div>
+                <div class="task-cmd">${escHtml(t.command || '')}</div>
+            </div>
+            <div class="task-time">${timeSince(t.created_at)}</div>
+            ${outputHtml}
+        `;
+        container.appendChild(el);
+    });
+}
+
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── CONSOLE ───
+async function sendCommand() {
+    const output = document.getElementById('console-output');
+    output.innerHTML = '<span class="console-line-muted">// Public dashboard is read-only. Use ChatGPT Action / MCP Remote API for execution.</span>';
+}
+document.getElementById('cmd-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendCommand(); });
+
+// ─── POLL LOOP ───
+const geoCache = {
+    '100.116.89.65': 'Oracle / Tailscale',
+    '100.103.12.14': 'ThinkCenter / Tailscale',
+    '100.90.67.12': 'N1 / Tailscale',
+};
+async function resolveGeo(ip) { return geoCache[ip] || null; }
+
+async function refresh() {
+    const [devices, tasks] = await Promise.all([fetchDevices(), fetchTasks()]);
+
+    let geoUpdated = false;
+    for (const d of devices) {
+        const ip = d.ip || d.public_ip;
+        if (ip && !geoCache[ip]) {
+            await resolveGeo(ip);
+            geoUpdated = true;
+        }
+    }
+
+    renderDevices(devices);
+    renderTasks(tasks);
+    renderTopology(devices);
+    const sourceTime = lastStatusFetchedAt ? new Date(lastStatusFetchedAt).toLocaleTimeString() : STATIC_UPDATED_AT;
+    document.getElementById('last-updated').textContent = `Updated ${sourceTime} · ${statusSourceLabel}`;
+}
+
+// Redraw topology on resize
+let resizeTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (devicesData.length) renderTopology(devicesData); }, 150);
+});
+
+loadTopologyLayout();
+setupTopologyInteractions();
+refresh();
+setInterval(refresh, POLL_INTERVAL);
+</script>
+</body>
+</html>

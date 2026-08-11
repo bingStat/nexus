@@ -1,0 +1,35 @@
+name: DevSpace Runtime
+
+on:
+  pull_request:
+    paths:
+      - "nexus_v3/**"
+      - "runtime/devspace/**"
+      - "tests/test_devspace_runtime.py"
+      - ".github/workflows/devspace-runtime.yml"
+  workflow_dispatch:
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.19.0"
+          package-manager-cache: false
+      - name: Install Python dependencies
+        run: python -m pip install pytest requests cryptography
+      - name: Install upstream DevSpace
+        working-directory: runtime/devspace
+        run: npm ci --no-audit --no-fund
+      - name: Verify upstream DevSpace bridge
+        working-directory: runtime/devspace
+        run: npm run check
+      - name: Run Nexus runtime tests
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_v3_contract.py tests/test_chatgpt_remote_artifacts.py tests/test_devspace_runtime.py

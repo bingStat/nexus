@@ -1,0 +1,464 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nexus Durable Task API",
+    "version": "2.1.2",
+    "description": "Create and resume durable cluster tasks. This API exposes deterministic aliases, Web Council orchestration, status, and approval recording. It intentionally excludes arbitrary shell execution."
+  },
+  "servers": [
+    {
+      "url": "https://nexus-api.bings.app"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/tasks": {
+      "post": {
+        "summary": "Create a durable Nexus task",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Existing idempotent task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown alias or invalid input"
+          },
+          "409": {
+            "description": "NEEDS_RECIPE, idempotency conflict, or approval gate"
+          }
+        },
+        "description": "Always preserve task_id and reuse the same Idempotency-Key after a timeout.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTask"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "get": {
+        "summary": "List recent Nexus tasks",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "summary": "Get one Nexus task status",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task status card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/events": {
+      "get": {
+        "summary": "Get the durable task event log",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/responses": {
+      "post": {
+        "summary": "Submit an explicitly user-provided Web Council reply",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "description": "This endpoint never reads browser tabs or provider credentials.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebResponse"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/advance": {
+      "post": {
+        "summary": "Advance Web Council to cross-review",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/finalize": {
+      "post": {
+        "summary": "Start final Council synthesis",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "description": "Returns quickly. Poll the same task_id until terminal.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/approve": {
+      "post": {
+        "summary": "Record explicit approval for a gated task",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "description": "Approval is recorded only. This API does not execute merge, push, deploy, main-branch mutation, or credential changes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Approval"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Nexus connector key"
+      }
+    },
+    "schemas": {
+      "CreateTask": {
+        "type": "object",
+        "required": [
+          "alias",
+          "prompt"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string",
+            "description": "Exact registered alias, for example nexus or thinkcenter:jellyfin"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "web-discussion",
+              "web-hybrid",
+              "council-standard"
+            ],
+            "default": "web-discussion"
+          },
+          "requested_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "analyze"
+            ]
+          },
+          "risk_policy": {
+            "type": "string",
+            "default": "auto_worktree_only"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional body fallback; prefer Idempotency-Key header"
+          }
+        }
+      },
+      "WebResponse": {
+        "type": "object",
+        "required": [
+          "provider",
+          "round",
+          "response"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "chatgpt",
+              "claude",
+              "gemini"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "response": {
+            "type": "string"
+          }
+        }
+      },
+      "Approval": {
+        "type": "object",
+        "required": [
+          "approval_code"
+        ],
+        "properties": {
+          "approval_code": {
+            "type": "string"
+          },
+          "approved_by": {
+            "type": "string",
+            "default": "user"
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "alias": {
+            "type": "string"
+          },
+          "target_device": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nexus_job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nexus_execution_status": {
+            "type": "string"
+          },
+          "council_verdict": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machine_acceptance_passed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "deployment_status": {
+            "type": "string"
+          },
+          "approval": {
+            "type": "object"
+          },
+          "next_action": {
+            "type": "string"
+          },
+          "markdown_digest": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
