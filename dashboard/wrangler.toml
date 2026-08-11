@@ -9,6 +9,3 @@ bucket_name = "nexus"
 [[routes]]
 pattern = "nexus.bings.app/*"
 zone_name = "bings.app"
-
-[vars]
-AUTH_USER = "admin"
