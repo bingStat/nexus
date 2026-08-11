@@ -10,13 +10,14 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
-from urllib.error import HTTPError, URLError
 
 from .common import json_dumps, read_json, utc_now, verify_http_signature
 
-VERSION = "3.0.1"
+VERSION = "3.1.0"
+TERMINAL = {"completed", "failed", "timeout"}
 
 
 class BrokerStore:
@@ -29,7 +30,10 @@ class BrokerStore:
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     target_device TEXT NOT NULL,
-                    command TEXT NOT NULL,
+                    command TEXT NOT NULL DEFAULT '',
+                    operation TEXT NOT NULL DEFAULT 'shell.execute',
+                    input_json TEXT NOT NULL DEFAULT '{}',
+                    result_json TEXT NOT NULL DEFAULT '{}',
                     timeout_ms INTEGER NOT NULL,
                     status TEXT NOT NULL,
                     output TEXT NOT NULL DEFAULT '',
@@ -40,6 +44,9 @@ class BrokerStore:
                 )
                 """
             )
+            self._ensure_column(db, "operation", "TEXT NOT NULL DEFAULT 'shell.execute'")
+            self._ensure_column(db, "input_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(db, "result_json", "TEXT NOT NULL DEFAULT '{}'")
             db.commit()
 
     def connect(self) -> sqlite3.Connection:
@@ -47,16 +54,52 @@ class BrokerStore:
         db.row_factory = sqlite3.Row
         return db
 
+    def _ensure_column(self, db: sqlite3.Connection, column: str, definition: str) -> None:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)").fetchall()}
+        if column not in columns:
+            db.execute(f"ALTER TABLE jobs ADD COLUMN {column} {definition}")
+
+    @staticmethod
+    def normalize(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        out = dict(row)
+        try:
+            out["input"] = json.loads(out.pop("input_json", "{}") or "{}")
+        except json.JSONDecodeError:
+            out["input"] = {}
+        try:
+            out["result"] = json.loads(out.pop("result_json", "{}") or "{}")
+        except json.JSONDecodeError:
+            out["result"] = {}
+        if out.get("operation") == "shell.execute" and not out["input"] and out.get("command"):
+            out["input"] = {"command": out["command"]}
+        return out
+
     def submit(self, payload: dict[str, Any]) -> dict[str, Any]:
         target = str(payload.get("target_device") or payload.get("device_id") or "").strip().lower()
-        command = str(payload.get("command") or "")
-        if not target or not command:
-            raise ValueError("target_device and command are required")
+        operation = str(payload.get("operation") or "shell.execute").strip()
+        input_data = payload.get("input")
+        if input_data is None:
+            input_data = {}
+        if not isinstance(input_data, dict):
+            raise ValueError("input must be an object")
+        command = str(payload.get("command") or input_data.get("command") or "")
+        if operation == "shell.execute":
+            if not command:
+                raise ValueError("shell.execute requires command")
+            input_data = {**input_data, "command": command}
+        elif not operation.startswith("workspace."):
+            raise ValueError(f"unsupported operation: {operation}")
+        if not target:
+            raise ValueError("target_device is required")
+
         now = utc_now()
         job = {
             "id": str(uuid.uuid4()),
             "target_device": target,
             "command": command,
+            "operation": operation,
+            "input_json": json_dumps(input_data),
+            "result_json": "{}",
             "timeout_ms": int(payload.get("timeout_ms") or 30000),
             "status": "pending",
             "created_at": now,
@@ -65,11 +108,19 @@ class BrokerStore:
         }
         with self.connect() as db:
             db.execute(
-                "INSERT INTO jobs(id,target_device,command,timeout_ms,status,output,created_at,updated_at) VALUES(:id,:target_device,:command,:timeout_ms,:status,:output,:created_at,:updated_at)",
+                """
+                INSERT INTO jobs(
+                    id,target_device,command,operation,input_json,result_json,
+                    timeout_ms,status,output,created_at,updated_at
+                ) VALUES(
+                    :id,:target_device,:command,:operation,:input_json,:result_json,
+                    :timeout_ms,:status,:output,:created_at,:updated_at
+                )
+                """,
                 job,
             )
             db.commit()
-        return job
+        return self.normalize(job)
 
     def claim(self, device_id: str, lease_owner: str) -> dict[str, Any] | None:
         now = utc_now()
@@ -82,9 +133,12 @@ class BrokerStore:
             if not row:
                 db.commit()
                 return None
-            db.execute("UPDATE jobs SET status='running', lease_owner=?, updated_at=? WHERE id=?", (lease_owner, now, row["id"]))
+            db.execute(
+                "UPDATE jobs SET status='running', lease_owner=?, updated_at=? WHERE id=?",
+                (lease_owner, now, row["id"]),
+            )
             db.commit()
-            out = dict(row)
+            out = self.normalize(row)
             out["status"] = "running"
             out["lease_owner"] = lease_owner
             out["updated_at"] = now
@@ -93,8 +147,14 @@ class BrokerStore:
     def complete(self, payload: dict[str, Any], device_id: str) -> dict[str, Any]:
         job_id = str(payload.get("id") or "")
         status = str(payload.get("status") or "")
-        if status not in {"completed", "failed", "timeout"}:
+        if status not in TERMINAL:
             raise ValueError("invalid terminal status")
+        result = payload.get("result") or {}
+        if not isinstance(result, dict):
+            raise ValueError("result must be an object")
+        output = str(payload.get("output") or "")
+        if not output and result:
+            output = json_dumps(result)[-20000:]
         now = utc_now()
         with self.connect() as db:
             row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -103,8 +163,19 @@ class BrokerStore:
             if row["target_device"] != device_id:
                 raise PermissionError("device cannot complete another device job")
             db.execute(
-                "UPDATE jobs SET status=?, output=?, exit_code=?, updated_at=? WHERE id=?",
-                (status, str(payload.get("output") or ""), int(payload.get("exit_code") or 0), now, job_id),
+                """
+                UPDATE jobs
+                SET status=?, output=?, exit_code=?, result_json=?, updated_at=?
+                WHERE id=?
+                """,
+                (
+                    status,
+                    output[-20000:],
+                    int(payload.get("exit_code") or 0),
+                    json_dumps(result),
+                    now,
+                    job_id,
+                ),
             )
             db.commit()
         return self.get(job_id)
@@ -114,7 +185,7 @@ class BrokerStore:
             row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             if not row:
                 raise KeyError(job_id)
-            return dict(row)
+            return self.normalize(row)
 
 
 class ReplayGuard:
@@ -151,7 +222,10 @@ class Handler(BaseHTTPRequestHandler):
     replay_guard = ReplayGuard()
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        print(json_dumps({"ts": utc_now(), "service": "broker", "remote": self.client_address[0], "msg": fmt % args}), flush=True)
+        print(
+            json_dumps({"ts": utc_now(), "service": "broker", "remote": self.client_address[0], "msg": fmt % args}),
+            flush=True,
+        )
 
     def send_json(self, code: int, payload: Any) -> None:
         body = json_dumps(payload).encode("utf-8")
@@ -178,7 +252,15 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             if parsed.path == "/v3/health":
-                return self.send_json(200, {"status": "ok", "service": "nexus-v3-broker", "version": VERSION, "region": os.getenv("NEXUS_V3_REGION", "unknown")})
+                return self.send_json(
+                    200,
+                    {
+                        "status": "ok",
+                        "service": "nexus-v3-broker",
+                        "version": VERSION,
+                        "region": os.getenv("NEXUS_V3_REGION", "unknown"),
+                    },
+                )
             if parsed.path == "/v3/jobs":
                 if not admin_ok(self):
                     return self.send_json(403, {"error": "admin auth failed"})
