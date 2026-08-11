@@ -16,16 +16,31 @@ function Get-Python {
     throw "Python 3 is required"
 }
 
+function Test-RuntimePython([string]$Path) {
+    if (-not (Test-Path $Path)) { return $false }
+    try {
+        & $Path -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
 $Python = Get-Python
 New-Item -ItemType Directory -Force -Path "$InstallDir\nexus_v3", "$InstallDir\logs" | Out-Null
 foreach ($file in @("__init__.py","common.py","agent.py","devspace_runtime.py","ledger.py")) {
     Invoke-WebRequest -UseBasicParsing "$SourceBase/nexus_v3/$file" -OutFile "$InstallDir\nexus_v3\$file"
 }
-if (-not (Test-Path "$InstallDir\.venv\Scripts\python.exe")) {
-    & $Python -m venv "$InstallDir\.venv"
-}
+
 $RuntimePython = "$InstallDir\.venv\Scripts\python.exe"
+if (-not (Test-RuntimePython $RuntimePython)) {
+    if (Test-Path "$InstallDir\.venv") { Remove-Item "$InstallDir\.venv" -Recurse -Force }
+    & $Python -m venv "$InstallDir\.venv"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-RuntimePython $RuntimePython)) {
+        throw "Failed to create a usable Nexus Python runtime"
+    }
+}
 & $RuntimePython -m pip install --disable-pip-version-check --quiet requests cryptography
+if ($LASTEXITCODE -ne 0) { throw "Failed to install Nexus Python dependencies" }
 
 $DevSpace = $null
 $Node = Get-Command node -ErrorAction SilentlyContinue
@@ -40,8 +55,12 @@ if ($Node -and $Npm) {
         Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/package-lock.json" -OutFile "$DevSpace\package-lock.json"
         Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/bridge.mjs" -OutFile "$DevSpace\bridge.mjs"
         Push-Location $DevSpace
-        try { & $Npm.Source ci --omit=dev --no-audit --no-fund; & $Node.Source .\bridge.mjs --self-test | Out-Host }
-        finally { Pop-Location }
+        try {
+            & $Npm.Source ci --omit=dev --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "DevSpace npm install failed" }
+            & $Node.Source .\bridge.mjs --self-test | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "DevSpace self-test failed" }
+        } finally { Pop-Location }
     }
 }
 
@@ -64,7 +83,8 @@ if ($DevSpace) {
         state_dir = "$InstallDir\devspace-state"
     }
 }
-$Config | ConvertTo-Json -Depth 8 | Set-Content "$InstallDir\v3.json" -Encoding utf8
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("$InstallDir\v3.json", ($Config | ConvertTo-Json -Depth 8), $Utf8NoBom)
 
 $Runner = @"
 @echo off
@@ -74,14 +94,40 @@ cd /d $InstallDir
 "@
 $Runner | Set-Content "$InstallDir\run-agent.cmd" -Encoding ascii
 
-$TaskName = "Nexus v3 Agent ($($DeviceId.ToLowerInvariant()))"
-schtasks.exe /Delete /TN $TaskName /F 2>$null | Out-Null
-schtasks.exe /Create /SC ONLOGON /TN $TaskName /TR "`"$InstallDir\run-agent.cmd`"" /F | Out-Null
-Start-Process -WindowStyle Hidden -FilePath "$InstallDir\run-agent.cmd"
-Start-Sleep -Seconds 2
+$LegacyTaskNames = @(
+    "NexusAgent",
+    "NexusV3Agent",
+    "Nexus v3 Agent ($($DeviceId.ToLowerInvariant()))"
+)
+foreach ($TaskName in $LegacyTaskNames) {
+    try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch {}
+    try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+}
+$InstallDirPattern = [regex]::Escape($InstallDir)
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.ProcessId -ne $PID -and
+        $_.CommandLine -and
+        $_.CommandLine -match "nexus_v3\.agent" -and
+        $_.CommandLine -match $InstallDirPattern
+    } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+$LegacyDir = "$env:USERPROFILE\.nexus-agent"
+if (Test-Path $LegacyDir) { Remove-Item $LegacyDir -Recurse -Force -ErrorAction SilentlyContinue }
+Remove-Item "$InstallDir\agent.log", "$InstallDir\ssh_ed25519.pub" -Force -ErrorAction SilentlyContinue
+
+$RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+New-Item -Path $RunKey -Force | Out-Null
+$RunCommand = 'cmd.exe /d /s /c ""{0}""' -f "$InstallDir\run-agent.cmd"
+New-ItemProperty -Path $RunKey -Name "NexusV3Agent" -PropertyType String -Value $RunCommand -Force | Out-Null
 
 & $RuntimePython -m py_compile "$InstallDir\nexus_v3\agent.py" "$InstallDir\nexus_v3\ledger.py"
+if ($LASTEXITCODE -ne 0) { throw "Nexus Python compile check failed" }
+Start-Process -WindowStyle Hidden -FilePath "$InstallDir\run-agent.cmd"
+Start-Sleep -Seconds 2
 Write-Host "Nexus v3 installed for $DeviceId at $InstallDir"
+Write-Host "Startup: HKCU Run\NexusV3Agent (no administrator privilege required)."
 Write-Host "Identity is Ed25519 and remains local; no shared fleet credential is stored on the device."
 if ($DevSpace) { Write-Host "DevSpace runtime enabled for: $($AllowedRoots -join ', ')" }
 else { Write-Host "DevSpace runtime skipped because Node >= 22.19 + npm were not available." }
