@@ -39,6 +39,30 @@ install_python_package() {
   done
 }
 
+cleanup_retired_linux() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  retired_units="nexus-agent.service nexus-mcp.service nexus-broker.service nexus-n1-api-proxy.service nexus-readonly-api.service nexus-state-sync.service nexus-state-sync.timer nexus-peer-watchdog.service nexus-peer-watchdog.timer nexus-remediator.service nexus-remediator.timer nexus-api-dns-failover.service nexus-bootstrap-mirror.service nexus-global-api.service nexus-eu-broker.service nexus-eu-broker-tailnet.service nexus-oracle-api-relay.service nexus-oracle-container-recovery.service nexus-oracle-health-server.service nexus-oracle-health.service nexus-oracle-health.timer nexus-oracle-monitor.service nexus-oracle-monitor.timer nexus-oracle-standby.service nexus-telegram-source-sync.service nexus-telegram-source-sync.timer"
+  for unit in $retired_units; do
+    systemctl disable --now "$unit" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$unit"
+  done
+  rm -rf /opt/nexus /opt/nexus-bootstrap /opt/nexus-n1-api-relay /opt/nexus-global-api /opt/nexus-eu-broker /opt/nexus-oracle-api-relay /opt/nexus-v3-mcp /opt/nexus-bak
+  rm -rf /var/lib/nexus-global-api /var/lib/nexus-eu-broker /var/lib/nexus-broker /var/lib/nexus-agent /var/lib/nexus-api-failover /var/lib/nexus-peer-watchdog
+  rm -f /etc/nexus-agent.env /etc/nexus-mcp.env /etc/nexus-global-api-connector.env /etc/nexus-mcp-public-path /etc/nexus-oracle-standby.env /etc/nexus-service.env
+  rm -f /usr/local/sbin/nexus-api-dns-failover /usr/local/sbin/nexus-peer-watchdog /usr/local/sbin/nexus-remediator
+  systemctl daemon-reload
+  systemctl reset-failed >/dev/null 2>&1 || true
+}
+
+cleanup_retired_openwrt() {
+  for init in /etc/init.d/nexus-agent /etc/init.d/nexus; do
+    [ -e "$init" ] || continue
+    "$init" stop >/dev/null 2>&1 || true
+    "$init" disable >/dev/null 2>&1 || true
+    rm -f "$init"
+  done
+  rm -rf /opt/nexus-bak /opt/nexus-agent/backups /opt/nexus-agent/state
+}
 install_ssh_sync_script() {
   install_dir="$1"
   registry_url="$2"
@@ -153,6 +177,7 @@ trigger_cluster_ssh_sync() {
 
 install_registry() {
   need_root
+  cleanup_retired_linux
   install_dir="${NEXUS_V3_INSTALL_DIR:-/opt/nexus-v3}"
   env_file="${NEXUS_V3_ENV_FILE:-/etc/nexus-v3.env}"
   db_path="${NEXUS_V3_REGISTRY_DB:-/var/lib/nexus-v3/registry.db}"
@@ -195,6 +220,7 @@ EOF
 
 install_broker() {
   need_root
+  cleanup_retired_linux
   region="${1:-${NEXUS_V3_REGION:-cn}}"
   install_dir="${NEXUS_V3_INSTALL_DIR:-/opt/nexus-v3}"
   env_file="${NEXUS_V3_ENV_FILE:-/etc/nexus-v3.env}"
@@ -240,6 +266,7 @@ EOF
 
 install_openwrt_agent() {
   need_root
+  cleanup_retired_openwrt
   device_id="${1:-${NEXUS_DEVICE_ID:-}}"
   [ -f /etc/openwrt_release ] || fail "OpenWrt/iStoreOS required for $device_id self-claiming agent"
   [ -n "$device_id" ] || fail "OpenWrt agent mode requires canonical device id"
@@ -312,6 +339,7 @@ EOF
 
 install_agent() {
   need_root
+  cleanup_retired_linux
   device_id="${1:-${NEXUS_DEVICE_ID:-}}"
   [ -n "$device_id" ] || fail "agent mode requires canonical device id"
   case "$device_id" in
@@ -423,6 +451,7 @@ EOF
 
 install_remote() {
   need_root
+  cleanup_retired_linux
   install_dir="${NEXUS_CHATGPT_INSTALL_DIR:-/opt/nexus-chatgpt-remote}"
   env_file="${NEXUS_CHATGPT_ENV_FILE:-/etc/nexus-chatgpt-remote.env}"
   v3_env="${NEXUS_V3_ENV_FILE:-/etc/nexus-v3.env}"
@@ -503,6 +532,7 @@ EOF
 
 install_ops() {
   need_root
+  cleanup_retired_linux
   tmp="/tmp/nexus-ops-install.$$"
   copy_or_fetch ops/install.sh "$tmp"
   chmod 755 "$tmp"

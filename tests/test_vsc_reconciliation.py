@@ -82,6 +82,14 @@ def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     assert "identity_ed25519" in windows and "execution-ledger.db" in windows
     assert "/v3/devices/heartbeat" not in openwrt
     assert "NEXUS_HEARTBEAT_SECONDS" not in openwrt
+    cleanup = linux[linux.index("cleanup_retired_linux()"):linux.index("install_ssh_sync_script()")]
+    assert "nexus-api-dns-failover.service" in cleanup
+    assert "/opt/nexus-global-api" in cleanup
+    assert "/opt/nexus-agent/backups" in cleanup
+    assert "nexus-v3-agent.service" not in cleanup
+    assert "nexus-public-guard.service" not in cleanup
+    assert "nexus-health-snapshot.timer" not in cleanup
+    assert "/var/lib/nexus-v3" not in cleanup
     broker = (ROOT / "nexus_v3" / "broker.py").read_text(encoding="utf-8")
     assert "agent_presence" in broker and "touch_presence" in broker
 
