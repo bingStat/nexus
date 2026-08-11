@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from .common import json_dumps, read_json, utc_now, verify_registration_payload
 
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 DEVICE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 SSH_PUBLIC_KEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/=]+(?: .*)?$")
 
@@ -32,6 +32,7 @@ class RegistryStore:
                     hostname TEXT NOT NULL,
                     platform TEXT NOT NULL,
                     agent_version TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -40,6 +41,7 @@ class RegistryStore:
                 """
             )
             self._ensure_column(db, "devices", "ssh_public_key", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, "devices", "capabilities_json", "TEXT NOT NULL DEFAULT '{}'")
             db.commit()
 
     def connect(self) -> sqlite3.Connection:
@@ -52,6 +54,16 @@ class RegistryStore:
         if column not in columns:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+    @staticmethod
+    def normalize(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        out = dict(row)
+        raw = out.pop("capabilities_json", "{}") or "{}"
+        try:
+            out["capabilities"] = json.loads(raw)
+        except json.JSONDecodeError:
+            out["capabilities"] = {}
+        return out
+
     def register(self, payload: dict[str, Any]) -> dict[str, Any]:
         device_id = str(payload.get("device_id") or "").strip().lower()
         if not DEVICE_RE.match(device_id):
@@ -60,6 +72,9 @@ class RegistryStore:
         ssh_public_key = str(payload.get("ssh_public_key") or "").strip()
         if ssh_public_key and not SSH_PUBLIC_KEY_RE.match(ssh_public_key):
             raise ValueError("invalid ssh_public_key")
+        capabilities = payload.get("capabilities") or {}
+        if not isinstance(capabilities, dict):
+            raise ValueError("capabilities must be an object")
         now = utc_now()
         with self.connect() as db:
             row = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
@@ -70,8 +85,10 @@ class RegistryStore:
                 approved_at = row["approved_at"]
             db.execute(
                 """
-                INSERT INTO devices(device_id,key_id,public_key_ed25519,ssh_public_key,hostname,platform,agent_version,status,created_at,updated_at,approved_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO devices(
+                    device_id,key_id,public_key_ed25519,ssh_public_key,hostname,platform,
+                    agent_version,capabilities_json,status,created_at,updated_at,approved_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(device_id) DO UPDATE SET
                   key_id=excluded.key_id,
                   public_key_ed25519=excluded.public_key_ed25519,
@@ -79,6 +96,7 @@ class RegistryStore:
                   hostname=excluded.hostname,
                   platform=excluded.platform,
                   agent_version=excluded.agent_version,
+                  capabilities_json=excluded.capabilities_json,
                   status=excluded.status,
                   updated_at=excluded.updated_at,
                   approved_at=excluded.approved_at
@@ -91,6 +109,7 @@ class RegistryStore:
                     str(payload.get("hostname") or ""),
                     str(payload.get("platform") or ""),
                     str(payload.get("agent_version") or ""),
+                    json_dumps(capabilities),
                     status,
                     row["created_at"] if row else now,
                     now,
@@ -101,30 +120,39 @@ class RegistryStore:
             return self.get(device_id, include_key=False) | {"status": status}
 
     def list(self, status: str | None = None) -> list[dict[str, Any]]:
-        sql = "SELECT device_id,key_id,ssh_public_key,hostname,platform,agent_version,status,created_at,updated_at,approved_at FROM devices"
+        sql = (
+            "SELECT device_id,key_id,ssh_public_key,hostname,platform,agent_version,"
+            "capabilities_json,status,created_at,updated_at,approved_at FROM devices"
+        )
         args: tuple[str, ...] = ()
         if status:
             sql += " WHERE status=?"
             args = (status,)
         sql += " ORDER BY updated_at DESC"
         with self.connect() as db:
-            return [dict(row) for row in db.execute(sql, args).fetchall()]
+            return [self.normalize(row) for row in db.execute(sql, args).fetchall()]
 
     def get(self, device_id: str, include_key: bool = True) -> dict[str, Any]:
-        cols = "device_id,key_id,ssh_public_key,hostname,platform,agent_version,status,created_at,updated_at,approved_at"
+        cols = (
+            "device_id,key_id,ssh_public_key,hostname,platform,agent_version,"
+            "capabilities_json,status,created_at,updated_at,approved_at"
+        )
         if include_key:
             cols += ",public_key_ed25519"
         with self.connect() as db:
             row = db.execute(f"SELECT {cols} FROM devices WHERE device_id=?", (device_id,)).fetchone()
             if not row:
                 raise KeyError(device_id)
-            return dict(row)
+            return self.normalize(row)
 
     def approve(self, device_id: str, status: str) -> dict[str, Any]:
         now = utc_now()
         approved_at = now if status == "approved" else None
         with self.connect() as db:
-            cur = db.execute("UPDATE devices SET status=?, updated_at=?, approved_at=? WHERE device_id=?", (status, now, approved_at, device_id))
+            cur = db.execute(
+                "UPDATE devices SET status=?, updated_at=?, approved_at=? WHERE device_id=?",
+                (status, now, approved_at, device_id),
+            )
             if cur.rowcount == 0:
                 raise KeyError(device_id)
             db.commit()
@@ -133,7 +161,8 @@ class RegistryStore:
     def authorized_ssh_keys(self) -> list[dict[str, str]]:
         with self.connect() as db:
             rows = db.execute(
-                "SELECT device_id,ssh_public_key FROM devices WHERE status='approved' AND ssh_public_key<>'' ORDER BY device_id"
+                "SELECT device_id,ssh_public_key FROM devices "
+                "WHERE status='approved' AND ssh_public_key<>'' ORDER BY device_id"
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -151,7 +180,10 @@ class Handler(BaseHTTPRequestHandler):
     store: RegistryStore
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        print(json_dumps({"ts": utc_now(), "service": "registry", "remote": self.client_address[0], "msg": fmt % args}), flush=True)
+        print(
+            json_dumps({"ts": utc_now(), "service": "registry", "remote": self.client_address[0], "msg": fmt % args}),
+            flush=True,
+        )
 
     def send_json(self, code: int, payload: Any) -> None:
         body = json_dumps(payload).encode("utf-8")
