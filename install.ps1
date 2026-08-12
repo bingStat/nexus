@@ -88,9 +88,15 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 $Runner = @"
 @echo off
+setlocal
 set NEXUS_V3_CONFIG=$InstallDir\v3.json
 cd /d $InstallDir
+:restart
 "$RuntimePython" -m nexus_v3.agent >> "$InstallDir\logs\agent.log" 2>&1
+set NEXUS_AGENT_EXIT=%ERRORLEVEL%
+echo [%DATE% %TIME%] nexus_v3.agent exited with code %NEXUS_AGENT_EXIT%; restarting in 5 seconds>> "$InstallDir\logs\agent.log"
+timeout /t 5 /nobreak >nul
+goto restart
 "@
 $Runner | Set-Content "$InstallDir\run-agent.cmd" -Encoding ascii
 
@@ -108,9 +114,10 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
         $_.ProcessId -ne $PID -and
         $_.CommandLine -and
-        $_.CommandLine -match "nexus_v3\.agent" -and
-        $_.CommandLine -match $InstallDirPattern
+        $_.CommandLine -match $InstallDirPattern -and
+        ($_.CommandLine -match "nexus_v3\.agent" -or $_.CommandLine -match "run-agent\.cmd")
     } |
+    Sort-Object { if ($_.Name -eq 'cmd.exe') { 0 } else { 1 } } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 $LegacyDir = "$env:USERPROFILE\.nexus-agent"

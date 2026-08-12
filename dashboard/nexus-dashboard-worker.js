@@ -172,16 +172,29 @@ export default {
       return new Response(null, { status: 302, headers: securityHeaders({ 'Location': `/login?to=${encodeURIComponent(target)}`, 'Cache-Control': 'no-store' }) });
     }
 
-    if (path === '/status.json' && env.NEXUS_STATUS_SOURCE_URL && env.NEXUS_CHATGPT_API_KEY) {
-      const upstream = await fetch(env.NEXUS_STATUS_SOURCE_URL, {
-        headers: { 'Authorization': `Bearer ${env.NEXUS_CHATGPT_API_KEY}`, 'Accept': 'application/json' },
-        cf: { cacheTtl: 0, cacheEverything: false },
-      });
-      if (upstream.ok) {
+    if (path === '/status.json') {
+      if (!env.NEXUS_STATUS_SOURCE_URL || !env.NEXUS_CHATGPT_API_KEY) {
+        return new Response(JSON.stringify({ error: 'live status source is not configured' }), {
+          status: 503,
+          headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }),
+        });
+      }
+      try {
+        const upstream = await fetch(env.NEXUS_STATUS_SOURCE_URL, {
+          headers: { 'Authorization': `Bearer ${env.NEXUS_CHATGPT_API_KEY}`, 'Accept': 'application/json' },
+          cf: { cacheTtl: 0, cacheEverything: false },
+        });
+        if (!upstream.ok) throw new Error(`status source returned ${upstream.status}`);
         const payload = await upstream.json();
         const devices = Array.isArray(payload) ? payload : (payload.devices || []);
-        return new Response(JSON.stringify({ source: 'nexus-chatgpt-remote', updated_at: new Date().toISOString(), devices }), {
+        const counts = Array.isArray(payload) ? undefined : payload.counts;
+        return new Response(JSON.stringify({ source: 'nexus-chatgpt-remote', updated_at: new Date().toISOString(), devices, counts }), {
           headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v3 Remote Control' }),
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'live status source unavailable' }), {
+          status: 502,
+          headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }),
         });
       }
     }
@@ -189,7 +202,6 @@ export default {
     const routes = {
       '/': ['index.html', 'text/html; charset=utf-8'],
       '/index.html': ['index.html', 'text/html; charset=utf-8'],
-      '/status.json': ['status.json', 'application/json; charset=utf-8'],
     };
     const route = routes[path];
     if (!route) return new Response('Not Found', { status: 404, headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }) });

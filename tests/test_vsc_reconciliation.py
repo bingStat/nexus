@@ -77,6 +77,9 @@ def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     assert "Test-RuntimePython" in windows
     assert "UTF8Encoding($false)" in windows
     assert "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" in windows
+    assert ":restart" in windows and "goto restart" in windows
+    assert "restarting in 5 seconds" in windows
+    assert "run-agent\\.cmd" in windows
     assert "schtasks.exe /Create" not in windows
     assert "$env:USERPROFILE\\.nexus-agent" in windows
     assert "identity_ed25519" in windows and "execution-ledger.db" in windows

@@ -11,6 +11,8 @@ const objects = new Map([
 ]);
 const env = {
   NEXUS_PASSWORD: 'correct horse battery staple',
+  NEXUS_STATUS_SOURCE_URL: 'https://nexus-global-api.bings.app/api/status',
+  NEXUS_CHATGPT_API_KEY: 'test-api-key',
   NEXUS_BUCKET: {
     async get(key) {
       if (!objects.has(key)) return null;
@@ -18,6 +20,18 @@ const env = {
       return { async arrayBuffer() { return bytes.buffer; } };
     },
   },
+};
+
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = async (url, options = {}) => {
+  if (String(url) === env.NEXUS_STATUS_SOURCE_URL) {
+    assert.equal(options.headers.Authorization, 'Bearer test-api-key');
+    return new Response(JSON.stringify({
+      counts: { online: 6, degraded: 0, offline: 0, unknown: 0 },
+      devices: [{ device_id: 'oracle', runtime_status: 'online' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  return nativeFetch(url, options);
 };
 
 async function request(path, options = {}) {
@@ -64,6 +78,13 @@ const cookie = setCookie.split(';', 1)[0];
 response = await request('/', { headers: { Cookie: cookie } });
 assert.equal(response.status, 200);
 assert.match(await response.text(), /Nexus dashboard/);
+
+response = await request('/status.json', { headers: { Cookie: cookie } });
+assert.equal(response.status, 200);
+const liveStatus = await response.json();
+assert.equal(liveStatus.source, 'nexus-chatgpt-remote');
+assert.equal(liveStatus.counts.online, 6);
+assert.equal(liveStatus.devices[0].device_id, 'oracle');
 
 response = await request('/logout', { headers: { Cookie: cookie } });
 assert.equal(response.status, 302);

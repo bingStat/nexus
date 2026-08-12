@@ -19,6 +19,9 @@ def test_dashboard_uses_single_password_session_auth() -> None:
     assert 'Bitwarden Password Manager' in source
     assert 'Bitwarden Secrets Manager' not in source
     assert "path === '/release.json'" in source
+    assert "path === '/status.json'" in source
+    assert "live status source is not configured" in source
+    assert "live status source unavailable" in source
     assert "'/install.sh': 'install.sh'" not in source
     assert "path.startsWith('/bootstrap/')" not in source
     assert "path.startsWith('/docs/')" not in source
@@ -27,4 +30,6 @@ def test_dashboard_uses_single_password_session_auth() -> None:
 def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:
     config = WRANGLER.read_text(encoding="utf-8")
     assert "NEXUS_PASSWORD" not in config
+    assert "NEXUS_CHATGPT_API_KEY" not in config
+    assert 'NEXUS_STATUS_SOURCE_URL = "https://nexus-global-api.bings.app/api/status"' in config
     assert "AUTH_USER" not in config

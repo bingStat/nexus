@@ -703,12 +703,12 @@ function isoMinutesAgo(mins) { return new Date(Date.now() - mins * 60000).toISOS
 
 function fallbackDevicesSnapshot() {
     return [
-        { device_id: 'oracle', name: 'Oracle', status: 'online', last_seen: isoMinutesAgo(1), ip: '100.116.89.65', roles: DEVICE_META.oracle.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
-        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'online', last_seen: isoMinutesAgo(2), ip: '100.103.12.14', roles: DEVICE_META.thinkcenter.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
-        { device_id: 'n1', name: 'N1', status: 'online', last_seen: isoMinutesAgo(3), ip: '100.90.67.12', roles: DEVICE_META.n1.roles, capabilities: { runtime: 'shell' } },
-        { device_id: 'victus', name: 'Victus', status: 'online', last_seen: isoMinutesAgo(2), ip: '', roles: DEVICE_META.victus.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
-        { device_id: 'victus-wsl', name: 'Victus WSL', status: 'online', last_seen: isoMinutesAgo(2), ip: '', roles: DEVICE_META['victus-wsl'].roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
-        { device_id: 'vsc', name: 'VSC', status: 'online', last_seen: isoMinutesAgo(3), ip: '', roles: DEVICE_META.vsc.roles, capabilities: { runtime: 'shell' } },
+        { device_id: 'oracle', name: 'Oracle', status: 'unknown', last_seen: '', ip: '100.116.89.65', roles: DEVICE_META.oracle.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'unknown', last_seen: '', ip: '100.103.12.14', roles: DEVICE_META.thinkcenter.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'n1', name: 'N1', status: 'unknown', last_seen: '', ip: '100.90.67.12', roles: DEVICE_META.n1.roles, capabilities: { runtime: 'shell' } },
+        { device_id: 'victus', name: 'Victus', status: 'unknown', last_seen: '', ip: '', roles: DEVICE_META.victus.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'victus-wsl', name: 'Victus WSL', status: 'unknown', last_seen: '', ip: '', roles: DEVICE_META['victus-wsl'].roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'vsc', name: 'VSC', status: 'unknown', last_seen: '', ip: '', roles: DEVICE_META.vsc.roles, capabilities: { runtime: 'shell' } },
     ];
 }
 
@@ -742,7 +742,7 @@ async function fetchDevices() {
         const liveDevices = await fetchStatusJson();
         if (liveDevices?.length) return liveDevices;
     } catch (err) {
-        console.warn('Using snapshot device status because live status fetch failed', err);
+        console.warn('Live Nexus status unavailable; showing devices as unknown', err);
     }
     statusSourceLabel = 'snapshot';
     lastStatusFetchedAt = new Date().toISOString();
