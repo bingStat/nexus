@@ -93,6 +93,26 @@ function loginHtml({ error = false, target = '/' } = {}) {
 <body><main class="card"><div class="brand"><div class="icon">⚡</div><div><div class="title">NEXUS</div><div class="sub">v3 Remote Control Plane</div></div></div>${error ? '<p class="error">密码不正确，请重试。</p>' : ''}<form method="post" action="${action}"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" autofocus required><button type="submit">登录</button></form><div class="foot">Password managed by Bitwarden Password Manager</div></main></body></html>`;
 }
 
+function contentTypeForObject(key) {
+  if (key.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (key.endsWith('.md')) return 'text/markdown; charset=utf-8';
+  if (key.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (key.endsWith('.ps1')) return 'text/plain; charset=utf-8';
+  if (key.endsWith('.sh')) return 'application/x-sh; charset=utf-8';
+  if (key.endsWith('.py')) return 'text/x-python; charset=utf-8';
+  if (key.endsWith('.rb')) return 'text/plain; charset=utf-8';
+  if (key.endsWith('.mjs')) return 'text/javascript; charset=utf-8';
+  return 'application/octet-stream';
+}
+
+async function serveR2(env, key, cacheControl = 'public, max-age=60') {
+  const obj = await env.NEXUS_BUCKET.get(key);
+  if (!obj) return new Response(`R2 object not found: ${key}`, { status: 404, headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }) });
+  return new Response(await obj.arrayBuffer(), {
+    headers: securityHeaders({ 'Content-Type': contentTypeForObject(key), 'Cache-Control': cacheControl, 'X-Powered-By': 'Nexus v3 Remote Control' }),
+  });
+}
+
 function loginResponse(options = {}, status = 200) {
   return new Response(loginHtml(options), {
     status,
@@ -109,6 +129,27 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    const publicArtifacts = {
+      '/README.md': 'README.md',
+      '/install.sh': 'install.sh',
+      '/install.ps1': 'install.ps1',
+      '/chatgpt-prompt.md': 'nexus-v3-chatgpt-remote-prompt.md',
+      '/openapi.json': 'nexus-v3-remote-control-openapi.json',
+      '/release.json': 'release.json',
+    };
+    if (request.method === 'GET' && publicArtifacts[path]) {
+      return serveR2(env, publicArtifacts[path]);
+    }
+    if (request.method === 'GET' && path.startsWith('/bootstrap/')) {
+      if (path.includes('..')) return new Response('Bad Request', { status: 400 });
+      return serveR2(env, path.slice(1), 'public, max-age=300');
+    }
+    if (request.method === 'GET' && (path.startsWith('/docs/') || path === '/AGENTS.md' || path === '/NEXUS_CHATGPT_PROMPT.md' || path === '/ops/README.md')) {
+      if (path.includes('..')) return new Response('Bad Request', { status: 400 });
+      return serveR2(env, path.slice(1));
+    }
+
     const password = env.NEXUS_PASSWORD;
     if (!password) return new Response('NEXUS_PASSWORD is not configured', { status: 500 });
 

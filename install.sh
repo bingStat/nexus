@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/main}"
+SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://nexus.bings.app/bootstrap}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PYTHON="${PYTHON:-python3}"
 
@@ -449,6 +449,127 @@ EOF
   printf 'Public key: %s\n' "$identity_pub"
 }
 
+
+cleanup_retired_user() {
+  profile="$HOME/.profile"
+  for dir in "$HOME/.nexus-agent" "$HOME/.nexus"; do
+    [ -e "$dir" ] && rm -rf "$dir"
+  done
+  if [ -f "$profile" ]; then
+    tmp="$profile.nexus.$$"
+    awk '
+      $0 == "# BEGIN NEXUS V3 USER AGENT" {skip=1; next}
+      $0 == "# END NEXUS V3 USER AGENT" {skip=0; next}
+      skip != 1 {print}
+    ' "$profile" > "$tmp"
+    mv "$tmp" "$profile"
+  fi
+}
+
+install_user_agent() {
+  [ "$(id -u)" -ne 0 ] || fail "user-agent mode must run as a normal user, not root"
+  cleanup_retired_user
+  device_id="${1:-${NEXUS_DEVICE_ID:-}}"
+  [ -n "$device_id" ] || fail "user-agent mode requires canonical device id"
+  case "$device_id" in n1|ax3600) fail "$device_id requires openwrt-agent" ;; esac
+
+  registry_url="${NEXUS_V3_REGISTRY_URL:-https://nexus-global-api.bings.app}"
+  broker_url="${NEXUS_V3_BROKER_URL:-https://nexus-eu-broker.bings.app}"
+  install_dir="${NEXUS_USER_AGENT_DIR:-$HOME/.local/nexus-agent-v3}"
+  config_dir="${NEXUS_USER_AGENT_CONFIG_DIR:-$HOME/.config/nexus-agent}"
+  config_file="$config_dir/v3.json"
+  identity_key="$install_dir/identity_ed25519"
+  identity_pub="$install_dir/identity_ed25519.pub"
+  mkdir -p "$install_dir/logs" "$config_dir"
+  chmod 700 "$install_dir" "$config_dir"
+  install_python_package "$install_dir" __init__.py common.py agent.py devspace_runtime.py ledger.py
+
+  devspace_bridge=""
+  devspace_roots="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-$HOME}"
+  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    node_version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+    node_major="$(printf '%s' "$node_version" | cut -d. -f1)"
+    node_minor="$(printf '%s' "$node_version" | cut -d. -f2)"
+    if [ "${node_major:-0}" -gt 22 ] || { [ "${node_major:-0}" -eq 22 ] && [ "${node_minor:-0}" -ge 19 ]; }; then
+      runtime_dir="$install_dir/devspace-runtime"
+      mkdir -p "$runtime_dir"
+      copy_or_fetch runtime/devspace/package.json "$runtime_dir/package.json"
+      copy_or_fetch runtime/devspace/package-lock.json "$runtime_dir/package-lock.json"
+      copy_or_fetch runtime/devspace/bridge.mjs "$runtime_dir/bridge.mjs"
+      (cd "$runtime_dir" && npm ci --omit=dev --no-audit --no-fund >/dev/null && node ./bridge.mjs --self-test >/dev/null)
+      devspace_bridge="$runtime_dir/bridge.mjs"
+    fi
+  fi
+
+  runtime_python="$(command -v "$PYTHON" || true)"
+  [ -n "$runtime_python" ] || fail "python3 is required"
+  if ! "$runtime_python" - <<'PY' >/dev/null 2>&1
+import cryptography, requests
+PY
+  then
+    [ -d "$install_dir/.venv" ] || "$runtime_python" -m venv "$install_dir/.venv"
+    "$install_dir/.venv/bin/python" -m pip install --disable-pip-version-check --quiet requests cryptography
+    runtime_python="$install_dir/.venv/bin/python"
+  fi
+
+  "$runtime_python" - <<PY
+import json
+from pathlib import Path
+config = {
+    "device_id": "$device_id",
+    "registry_url": "$registry_url".rstrip("/"),
+    "broker_url": "$broker_url".rstrip("/"),
+    "identity_key": "$identity_key",
+    "identity_public_key": "$identity_pub",
+    "ssh_private_key": "$identity_key",
+    "ssh_public_key": "$identity_pub",
+    "wait_seconds": 20,
+    "poll_seconds": 1,
+    "request_timeout": 35,
+    "execution_ledger": "$install_dir/execution-ledger.db",
+}
+bridge = "$devspace_bridge"
+roots = [item for item in "$devspace_roots".split(":") if item]
+if bridge and roots:
+    config["devspace"] = {"bridge": bridge, "allowed_roots": roots, "state_dir": "$install_dir/devspace-state"}
+Path("$config_file").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+PY
+  chmod 600 "$config_file"
+
+  cat > "$install_dir/run-agent.sh" <<EOF
+#!/bin/sh
+export NEXUS_V3_CONFIG="$config_file"
+cd "$install_dir"
+exec "$runtime_python" -m nexus_v3.agent >>"$install_dir/logs/agent.log" 2>&1
+EOF
+  chmod 700 "$install_dir/run-agent.sh"
+  cat > "$install_dir/ensure-agent.sh" <<EOF
+#!/bin/sh
+pid_file="$install_dir/agent.pid"
+if [ -s "\$pid_file" ]; then
+  pid="\$(cat "\$pid_file" 2>/dev/null || true)"
+  [ -n "\$pid" ] && kill -0 "\$pid" 2>/dev/null && exit 0
+fi
+nohup "$install_dir/run-agent.sh" </dev/null >/dev/null 2>&1 &
+echo \$! >"\$pid_file"
+EOF
+  chmod 700 "$install_dir/ensure-agent.sh"
+
+  profile="$HOME/.profile"
+  touch "$profile"
+  {
+    printf '\n# BEGIN NEXUS V3 USER AGENT\n'
+    printf '[ -x "%s/ensure-agent.sh" ] && "%s/ensure-agent.sh" >/dev/null 2>&1 || true\n' "$install_dir" "$install_dir"
+    printf '# END NEXUS V3 USER AGENT\n'
+  } >> "$profile"
+  "$install_dir/ensure-agent.sh"
+  sleep 2
+  pid="$(cat "$install_dir/agent.pid" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || fail "user agent did not start"
+  printf 'Nexus user-local v3 Agent installed for %s at %s\n' "$device_id" "$install_dir"
+  printf 'Persistence: managed block in %s; no root/systemd required.\n' "$profile"
+}
+
 install_remote() {
   need_root
   cleanup_retired_linux
@@ -546,6 +667,7 @@ Usage:
   install.sh registry
   install.sh broker <eu|cn>
   install.sh agent <canonical-device-id>
+  install.sh user-agent <canonical-device-id>
   install.sh openwrt-agent <n1|ax3600>
   install.sh remote
   install.sh ops
@@ -559,6 +681,7 @@ case "$cmd" in
   registry) install_registry ;;
   broker) shift; install_broker "${1:-}" ;;
   agent) shift; install_agent "${1:-}" ;;
+  user-agent) shift; install_user_agent "${1:-}" ;;
   openwrt-agent) shift; install_openwrt_agent "${1:-}" ;;
   remote) install_remote ;;
   ops) install_ops ;;

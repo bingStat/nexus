@@ -1,53 +1,42 @@
-# Nexus 设备身份签名鉴权
+# Device identity and authentication
 
-状态：Nexus v3 当前设计。每台设备只持有本机 Nexus 专用 Ed25519 私钥；Registry 保存公钥和批准状态，Broker 按公钥验签。
+## Agent identity
 
-## 本机存储
+Every v3 Agent owns one local Ed25519 keypair. Registry stores the public key, key fingerprint, canonical device metadata and approval status; private keys never leave the device.
 
-| 平台 | 私钥 | 公钥 | 配置 |
-|---|---|---|---|
-| Linux/systemd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/v3.json` |
-| OpenWrt/procd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/identity_ed25519.pub` | `/etc/nexus-agent/v3.env`；签名辅助脚本 `/opt/nexus-agent/openwrt_ed25519_signer.rb` |
+| Platform | Private key | Configuration |
+| --- | --- | --- |
+| Linux/systemd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/v3.json` |
+| Windows | `%LOCALAPPDATA%\NexusAgentV3\identity_ed25519` | `%LOCALAPPDATA%\NexusAgentV3\v3.json` |
+| VSC/user-local | `~/.local/nexus-agent-v3/identity_ed25519` | `~/.config/nexus-agent/v3.json` |
+| OpenWrt | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/v3.env` |
 
-`identity_ed25519.pub` 就是设备 API key / device identity，同时也是加入 SSH 互信网络的 public key。服务器不保存私钥；所有 API 请求仍必须由对应私钥签名。
+A public key is an identity, not a bearer token. Claim and completion requests require proof from the corresponding private key.
 
-私钥只在本机，权限限制为 root/SYSTEM/管理员可读。公钥不是 token，不能直接作为凭据；请求必须用私钥签名。
-
-OpenWrt/iStoreOS 上的 OpenSSL 1.1.1 不一定支持 `pkeyutl` Ed25519 signing。OpenWrt Agent 会先尝试系统 OpenSSL；失败时使用 Nexus 随安装器下载的纯 Ruby signer。该 signer 只读取本机 PKCS#8 Ed25519 私钥并输出 64 字节签名，不保存 token。
-
-## API 与权威存储
-
-| 用途 | API 地址 | 存储 |
-|---|---|---|
-| 设备注册 | `POST {registry}/v3/devices/register` | `/var/lib/nexus-v3/registry.db` |
-| 待批准列表 | `GET {registry}/v3/admin/devices?status=pending` | 同上 |
-| 批准 | `POST {registry}/v3/admin/devices/{device_id}/approve` | 同上 |
-| 拒绝 | `POST {registry}/v3/admin/devices/{device_id}/reject` | 同上 |
-| 撤销 | `POST {registry}/v3/admin/devices/{device_id}/revoke` | 同上 |
-| approved 公钥查询 | `GET {registry}/v3/devices/{device_id}/public-key` | 同上 |
-| Broker 领取 | `GET {regional_broker}/v3/jobs/claim?...` | `/var/lib/nexus-v3/broker.db` |
-| Broker 回执 | `POST {regional_broker}/v3/jobs/complete` | 同上 |
-
-## 签名头
+## Signed requests
 
 ```text
-X-Nexus-Device: <canonical-device-id>
-X-Nexus-Key-Id: sha256:<public-key-fingerprint>
-X-Nexus-Timestamp: <UTC ISO-8601>
-X-Nexus-Nonce: <128-bit-random-base64url>
-X-Nexus-Signature: <base64url-ed25519-signature>
+X-Nexus-Device
+X-Nexus-Key-Id
+X-Nexus-Timestamp
+X-Nexus-Nonce
+X-Nexus-Signature
 ```
 
-签名输入：
+The signature covers HTTP method, path/query, timestamp, nonce, canonical device ID and SHA-256 body hash. Broker verifies approved identity, key ID, a 300-second timestamp window and nonce replay protection.
 
-```text
-NEXUS-V3-ED25519
-<HTTP_METHOD_UPPERCASE>
-<PATH_AND_QUERY>
-<X-Nexus-Timestamp>
-<X-Nexus-Nonce>
-<X-Nexus-Device>
-<hex_sha256_request_body>
-```
+New registrations are `pending`; an administrator must explicitly approve them before they can claim jobs.
+## SSH trust
 
-验签规则：规范设备 ID、approved 公钥、key_id 匹配、时间窗口 300 秒、nonce 10 分钟防重放、body hash 按原始请求体计算。
+The Nexus device public key can also populate the managed SSH block distributed by Registry. Sync changes only the `### BEGIN/END NEXUS MANAGED SSH KEYS` section; it must not rewrite unrelated `authorized_keys` entries. VSC inbound SSH remains subject to KU Leuven certificate policy and is not bypassed by Nexus keys.
+
+## Human login authentication
+
+Human passwords are a separate trust domain from Agent identity:
+
+- **Bitwarden Password Manager** is authoritative for human-facing logins such as Nexus Dashboard, VSC/code-server and OpenList.
+- **Bitwarden Secrets Manager** is reserved for machine/API credentials such as Cloudflare/R2 tokens, Nexus service keys and automation credentials.
+- Nexus Dashboard uses a Cloudflare Worker runtime secret copy of the Password Manager value and issues a `__Host-nexus_session` HttpOnly, Secure, SameSite=Strict cookie.
+- VSC code-server stores only an Argon2 hash locally through `HASHED_PASSWORD`; the plaintext is not kept in BSM or on VSC.
+
+Do not use a shared human password as an Agent credential, and do not place Ed25519 private keys in Password Manager for convenience.

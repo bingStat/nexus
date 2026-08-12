@@ -1,156 +1,111 @@
-# Nexus v3
+# Nexus
 
-Nexus 是个人设备集群的远程控制面与分布式开发空间。当前只有一套生产架构：
+**Distributed DevSpace + Fleet Control Plane for a small trusted device fleet.**
 
-```text
-ChatGPT / MCP
-      |
-      v
-Remote API / MCP Adapter
-      |
-      +--> Registry (device identity / approval / SSH public keys)
-      |
-      +--> EU Broker --------> EU Agent
-      |
-      +--> CN Broker --------> CN Agent
+Nexus routes a command or workspace operation to one exact device, using Ed25519 device identity, regional Brokers, durable execution receipts, and optional upstream DevSpace. GitHub `main` is the code source of truth; `nexus.bings.app` is the R2-backed production distribution and Dashboard entry point.
+
+## Install
+
+### Windows
+
+```powershell
+irm https://nexus.bings.app/install.ps1 -OutFile $env:TEMP\nexus-install.ps1
+& $env:TEMP\nexus-install.ps1 -DeviceId victus -AllowedRoots @("$env:USERPROFILE\aurora")
 ```
 
-每个 Agent 使用本机 Ed25519 身份签名请求；Broker 只向**明确指定的目标设备**交付任务。网络或 Broker 故障切换不得改变 `target_device`。
+### Linux / WSL
 
-## 核心能力
-
-- Ed25519 设备身份与 Registry 审批
-- EU / CN 区域 Broker
-- 单设备 shell 执行与最多 16 个任务的 batch
-- DevSpace workspace：read / patch / exec / interactive session
-- Broker idempotency、lease 超时恢复
-- Agent execution ledger，防止回执丢失导致重复执行
-- Broker long-poll presence 与 online / degraded / offline 状态
-- 3/5 分钟低频监控、抖动抑制、Telegram 批量告警
-- Agent Council 多 Agent 评审/实施模块
-
-## 项目结构
-
-```text
-nexus_v3/       核心控制面：Registry、Broker、Agent、Remote API、MCP、DevSpace adapter
-runtime/        上游 DevSpace runtime bridge
-ops/            健康快照、告警、Telegram、状态归档、systemd units
-scripts/        审批、验证、runtime 更新工具
-dashboard/      nexus.bings.app 静态面板与 Worker
-agent-council/  多 Agent Council；与 Nexus 控制面解耦
-docs/           架构、安全、恢复说明
-tests/          v3 契约与回归测试
+```bash
+curl -fsSL https://nexus.bings.app/install.sh | sudo sh -s -- agent <device-id>
 ```
 
-根目录只有两个安装入口：
+### VSC / HPC / other no-root Linux
 
-- `install.sh`：Linux / OpenWrt / 服务端组件
-- `install.ps1`：Windows Agent
+```bash
+curl -fsSL https://nexus.bings.app/install.sh | sh -s -- user-agent vsc
+```
 
-`.bak/` 仅用于本地迁移归档，并被 Git 忽略。
+### OpenWrt / iStoreOS
 
-## Canonical device IDs
+```sh
+curl -fsSL https://nexus.bings.app/install.sh | sh -s -- openwrt-agent <n1-or-ax3600>
+```
+### Control-plane components
 
-`oracle`, `thinkcenter`, `n1`, `vsc`, `victus`, `victus-wsl`, `elitebook`, `ax3600`
+```bash
+curl -fsSL https://nexus.bings.app/install.sh -o /tmp/nexus-install.sh
+sudo sh /tmp/nexus-install.sh registry
+sudo sh /tmp/nexus-install.sh broker eu
+sudo sh /tmp/nexus-install.sh broker cn
+sudo sh /tmp/nexus-install.sh remote
+sudo sh /tmp/nexus-install.sh ops
+```
 
-不支持 `all`、`broadcast`、模糊 alias 或“目标设备离线后换另一台机器代执行”。
+A new Agent registers as `pending`; approve it before expecting job delivery. Installers remove known retired Nexus paths before installing the current v3 runtime. Private device keys remain local.
 
-## Standard roles and current production fleet
+## Production fleet
 
-Roles describe Nexus component responsibilities only. Runtime capability is a separate field: do not mix `DevSpace`, `Shell`, OS, geography, or host type into role names. Standard roles are `v3 Agent`, `v3 Registry`, `v3 Broker (EU)`, `v3 Broker (CN)`, `v3 MCP`, `Remote API`, `Ops`, and `Public Guard`.
+Roles describe responsibilities. Runtime is a separate live capability and must not be folded into role names.
 
 | Device | Standard roles | Runtime |
 | --- | --- | --- |
-| `oracle` | v3 Registry / v3 Broker (EU) / v3 MCP / Remote API / Ops / v3 Agent | DevSpace 1.0.6 |
-| `thinkcenter` | v3 Broker (CN) / v3 Agent / Public Guard | DevSpace 1.0.6 |
-| `victus` | v3 Agent | DevSpace 1.0.6 |
-| `victus-wsl` | v3 Agent | DevSpace 1.0.6 |
-| `vsc` | v3 Agent | Shell |
-| `n1` | v3 Agent | Shell |
+| `oracle` | `v3 Registry` · `v3 Broker (EU)` · `v3 MCP` · `Remote API` · `Ops` · `v3 Agent` | **DevSpace 1.0.6** |
+| `thinkcenter` | `v3 Broker (CN)` · `v3 Agent` · `Public Guard` | **DevSpace 1.0.6** |
+| `victus` | `v3 Agent` | **DevSpace 1.0.6** |
+| `victus-wsl` | `v3 Agent` | **DevSpace 1.0.6** |
+| `vsc` | `v3 Agent` | **Shell** |
+| `n1` | `v3 Agent` | **Shell** |
 
-Dashboard and Remote API prefer live Agent `capabilities.runtime` / `capabilities.devspace_version`; this table is the current production deployment baseline and must not override live capability data.
-
-## 安装
-
-Linux Agent：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/main/install.sh | sudo sh -s -- agent <device-id>
-```
-
-OpenWrt / iStoreOS：
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/main/install.sh | sh -s -- openwrt-agent <n1-or-ax3600>
-```
-
-Windows PowerShell：
-
-```powershell
-irm https://raw.githubusercontent.com/bingStat/nexus/main/install.ps1 -OutFile $env:TEMP\nexus-install.ps1
-& $env:TEMP\nexus-install.ps1 -DeviceId victus
-```
-
-服务端组件：
-
-```bash
-sudo ./install.sh registry
-sudo ./install.sh broker eu
-sudo ./install.sh broker cn
-sudo ./install.sh remote
-sudo ./install.sh ops
-```
-
-## 设备身份与配置
-
-Linux/OpenWrt 默认身份：
+Canonical IDs also reserve `elitebook` and `ax3600`; they are not part of the current registered production fleet until they register and are approved.
+## Architecture
 
 ```text
-/etc/nexus-agent/identity_ed25519
-/etc/nexus-agent/identity_ed25519.pub
+ChatGPT / MCP / operator
+          |
+          v
+     Remote API / MCP
+          |
+          +---- Registry: identity / approval / SSH public keys
+          |
+          +---- EU Broker ---- exact EU target Agent
+          |
+          +---- CN Broker ---- exact CN target Agent
+                                |
+                         Shell or DevSpace
 ```
 
-Windows 默认身份：
+The invariant is strict: failover may change transport, never `target_device`. Registry does not own liveness; signed Agent long-poll traffic updates Broker presence. Broker jobs use stable IDs, idempotency keys and leases, while each Agent keeps a local execution ledger to prevent duplicate side effects after lost acknowledgements.
 
-```text
-%LOCALAPPDATA%\NexusAgentV3\identity_ed25519
-%LOCALAPPDATA%\NexusAgentV3\identity_ed25519.pub
-```
+## Production distribution
 
-私钥只留在本机。Registry 只保存公钥与批准状态。Agent 正常 long-poll 区域 Broker 时顺带刷新 presence，不产生额外 heartbeat 流量；控制面按 Broker 最近 presence 计算 runtime state。
+Every push to GitHub `main` runs the R2 publishing gate: full tests → release staging → R2 credential validation → dry-run → checksum sync → checksum verification → exact object-set verification.
 
-若目标存在 Node >= 22.19 与 npm，安装器会启用 DevSpace；Linux 用 `NEXUS_DEVSPACE_ALLOWED_ROOTS` 指定可访问根目录，Windows 用 `-AllowedRoots`。
+`nexus.bings.app` serves public install/release artifacts from R2 and protects the Dashboard with a single-password Worker session. Human login passwords belong in **Bitwarden Password Manager**; machine/API credentials belong in **Bitwarden Secrets Manager** or platform-native secret stores.
 
-## 新设备批准
+## DevSpace
 
-首次注册为 `pending`，在有 `NEXUS_V3_ADMIN_KEY` 的管理节点执行：
+Compatible Agents advertise `runtime=devspace` and the tested DevSpace version. Nexus delegates workspace semantics to upstream `@waishnav/devspace`; it does not reimplement worktrees, patching or interactive process sessions. OpenWrt and constrained nodes remain Shell-only by design.
+## Documentation
 
-```bash
-NEXUS_V3_REGISTRY_URL=https://nexus-global-api.bings.app \
-python3 scripts/approve_v3_devices.py <device-id>
-```
+The maintained nine-document system lives under `docs/`:
 
-## Remote API / MCP
+1. [Project overview](docs/PROJECT_OVERVIEW.md)
+2. [Clean architecture](docs/NEXUS_V3_CLEAN_ARCHITECTURE.md)
+3. [Distributed DevSpace architecture](docs/DISTRIBUTED_DEVSPACE_ARCHITECTURE.md)
+4. [Device identity & authentication](docs/DEVICE_IDENTITY_AUTH.md)
+5. [Deployment](docs/DEPLOYMENT.md)
+6. [Operations](docs/OPERATIONS.md)
+7. [Security](docs/SECURITY.md)
+8. [Recovery runbook](docs/RECOVERY_RUNBOOK.md)
+9. [VSC / Victus reconciliation history](docs/VSC_RECONCILIATION.md)
 
-ChatGPT 接入说明见 [NEXUS_CHATGPT_PROMPT.md](NEXUS_CHATGPT_PROMPT.md)。机器可读资产：
+Additional contracts: [AGENTS.md](AGENTS.md), [ChatGPT / MCP integration](NEXUS_CHATGPT_PROMPT.md), and [Ops details](ops/README.md).
 
-- `agent-council/integrations/nexus-v3-remote-control-openapi.json`
-- `agent-council/integrations/nexus-v3-chatgpt-remote-prompt.md`
+## Repository layout
 
-主要接口：`getFleetStatus`, `listDevices`, `getDevice`, `executeCommand`, `executeBatch`, `executeRuntimeOperation`, `getJob`。
+`nexus_v3/` control plane · `runtime/` DevSpace bridge · `ops/` monitoring · `dashboard/` R2/Worker UI · `agent-council/` optional multi-agent review · `scripts/` maintenance · `tests/` contracts.
 
-## 运维策略
-
-`ops/` 不依赖 Supabase。默认 cadence：
-
-- health snapshot：3 分钟
-- alert evaluation：3 分钟
-- Telegram：5 分钟
-- state archive：5 分钟
-
-告警默认需要连续失败确认，恢复也需要连续成功确认；30 分钟内再次抖动会提高 reopen 阈值。详见 `ops/README.md`。
-
-## 验证
+## Validate
 
 ```bash
 python -m pytest -q
@@ -158,4 +113,4 @@ python scripts/verify_v3.py
 sh -n install.sh ops/install.sh runtime/devspace/install.sh nexus_v3/assets/openwrt_v3_agent.sh
 ```
 
-生产基线以 GitHub `main` 为唯一代码事实源；Victus 和 VSC 工作副本必须与同一 `main` commit 对齐。
+Development happens on Victus; GitHub `main` is the canonical remote source. Production nodes keep installed runtime/configuration only, not development clones.

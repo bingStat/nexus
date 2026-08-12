@@ -1,41 +1,38 @@
-# VSC / Victus reconciliation — 2026-08-11
+# VSC / Victus reconciliation history
 
-Nexus had two production-oriented lines after commit `e1827e8`:
+## Why this document exists
 
-- Victus v3 line: Ed25519 identity, Registry, Regional Brokers, clean installers, exact-target routing, DevSpace runtime.
-- VSC `nexus-perf` line: operational dashboard, service probes, alert debouncing, Telegram batching, Oracle standby, state history, legacy Supabase-based execution.
+On 2026-08-11 Nexus had a Victus v3/DevSpace line and an older VSC production-ops line. They were deliberately converged into one architecture rather than preserved as compatibility branches.
 
-The canonical architecture is the Victus v3 line. VSC was treated as a source of production lessons, not as a branch to merge wholesale.
+The retained production path is:
 
-## Retained and rewritten
+```text
+Client -> Remote API / MCP -> Registry -> Regional Broker -> exact target v3 Agent
+```
 
-- health snapshots -> `ops/monitoring/snapshot.py`
-- transition-based alert engine -> `ops/monitoring/alerts.py`
-- 3/5/10 streak thresholds and 30-minute reopen suppression
-- Telegram event batching, mute/resume, and replay suppression -> `ops/monitoring/telegram.py`
-- SQLite operational history -> `ops/monitoring/state_store.py`
-- VSC/Oracle external probes -> configurable HTTP/TCP checks in `ops/config.example.json`
-- Windows deployment lessons -> root `install.ps1`
-- API resilience -> Broker idempotency, lease expiry/reclaim, Agent execution ledger
-- device-state thresholds -> `nexus_v3/status.py`
+Victus became the only development working copy and GitHub `main` the canonical remote source. The VSC Git source clone was removed after the histories were reconciled.
 
-## Intentionally retired
+## Retained lessons
 
-- Supabase task queue / REST relay
-- old shared API-token Agents
-- old `mcp_server/` execution path
-- N1 relay whose fallback returned to Supabase
-- Oracle read-only standby built on the legacy data model
-- duplicate Windows installer that downloaded legacy `agent.py`
-- high-frequency probes and notification polling
-- compatibility aliases, `all`/`broadcast`, and cross-device execution fallback
+The VSC line contributed low-frequency health snapshots, debounced alert transitions, Telegram batching, SQLite operational history and production failure lessons. These were rewritten into `ops/`, Broker idempotency/leases, Agent execution ledger and status derivation rather than carrying forward the legacy execution path.
 
-## Liveness decision
+## Retired paths
 
-The temporary v3 implementation added a separate Registry heartbeat. It was removed during reconciliation. Every active Agent already long-polls its Regional Broker, so the Broker records `agent_presence` on those authenticated claim requests. The Global API merges Registry identity with EU/CN Broker presence and derives `online/degraded/offline` from that timestamp.
+Removed permanently: Supabase task queue/relay, shared-token Agents, old MCP/control-plane implementation, duplicate heartbeat loops, high-frequency probes, Oracle legacy standby, N1 Supabase relay, `all`/`broadcast`, fuzzy aliases and target-device substitution.
 
-This avoids a second heartbeat loop, keeps Registry focused on identity, and makes liveness reflect the actual execution path.
+VSC itself now runs only one user-local v3 Agent. Legacy `.nexus-agent`, `.nexus`, old watchdog/cron/profile starts, local Broker forwarding and the VSC Nexus source repository were removed.
+## Current VSC baseline
 
-## Source preservation
+- Role: `v3 Agent`.
+- Runtime: `Shell`.
+- Install root: `~/.local/nexus-agent-v3`.
+- Config: `~/.config/nexus-agent/v3.json`.
+- Persistence: managed `~/.profile` ensure block.
+- Human code-server password: Bitwarden Password Manager; VSC stores only a local Argon2 hash and starts code-server with `HASHED_PASSWORD`.
+- DevSpace is intentionally disabled until the available Node runtime meets the pinned minimum.
 
-The VSC worktree was backed up before reconciliation. On Victus, migration references and removed local AI/history material are retained under ignored `.bak/` directories. These are recovery material only and are not part of the production repository.
+ThinkDesk reverse-tunnel material is separated under ThinkDesk-owned paths; it is not a Nexus runtime dependency.
+
+## Reconciliation rules going forward
+
+Do not recreate a VSC source clone to solve an operational problem. Fix the canonical repository on Victus, merge through GitHub, publish R2 automatically, then reinstall/update the VSC runtime from the public production installer. Historical patches remain local recovery material under ignored Victus `.bak` only.
