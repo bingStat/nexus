@@ -8,6 +8,8 @@ const { default: worker } = await import(moduleUrl);
 const objects = new Map([
   ['index.html', '<html>Nexus dashboard</html>'],
   ['README.md', '# Nexus'],
+  ['install.sh', '#!/bin/sh\necho nexus'],
+  ['bootstrap/nexus_v3/agent.py', 'print(\"agent\")'],
 ]);
 const env = {
   NEXUS_PASSWORD: 'correct horse battery staple',
@@ -24,7 +26,17 @@ async function request(path, options = {}) {
   return worker.fetch(new Request(`https://nexus.bings.app${path}`, options), env);
 }
 
-let response = await request('/');
+let response = await request('/install.sh');
+assert.equal(response.status, 200);
+assert.match(await response.text(), /echo nexus/);
+response = await request('/bootstrap/nexus_v3/agent.py');
+assert.equal(response.status, 200);
+assert.match(await response.text(), /agent/);
+response = await request('/README.md');
+assert.equal(response.status, 200);
+assert.equal(await response.text(), '# Nexus');
+
+response = await request('/');
 assert.equal(response.status, 302);
 assert.equal(response.headers.get('location'), '/login?to=%2F');
 response = await request('/login');
@@ -33,29 +45,29 @@ const loginHtml = await response.text();
 assert.match(loginHtml, /name="password"/);
 assert.doesNotMatch(loginHtml, /name="username"/);
 
-response = await request('/login?to=%2FREADME.md', {
+response = await request('/login?to=%2F', {
   method: 'POST',
   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   body: new URLSearchParams({ password: 'wrong password' }),
 });
 assert.equal(response.status, 401);
 
-response = await request('/login?to=%2FREADME.md', {
+response = await request('/login?to=%2F', {
   method: 'POST',
   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   body: new URLSearchParams({ password: env.NEXUS_PASSWORD }),
 });
 assert.equal(response.status, 302);
-assert.equal(response.headers.get('location'), '/README.md');
+assert.equal(response.headers.get('location'), '/');
 const setCookie = response.headers.get('set-cookie');
 assert.match(setCookie, /__Host-nexus_session=/);
 assert.match(setCookie, /HttpOnly/);
 assert.match(setCookie, /Secure/);
 assert.match(setCookie, /SameSite=Strict/);
 const cookie = setCookie.split(';', 1)[0];
-response = await request('/README.md', { headers: { Cookie: cookie } });
+response = await request('/', { headers: { Cookie: cookie } });
 assert.equal(response.status, 200);
-assert.equal(await response.text(), '# Nexus');
+assert.match(await response.text(), /Nexus dashboard/);
 
 response = await request('/logout', { headers: { Cookie: cookie } });
 assert.equal(response.status, 302);

@@ -1,90 +1,38 @@
-# Nexus v3 安全基线
+# Nexus v3 security baseline
 
-## 1. 身份模型
+## Device trust
 
-- Agent 不保存共享 API token。
-- 每台设备拥有 Nexus 专用 Ed25519 API identity：
-  - Linux/OpenWrt：`/etc/nexus-agent/identity_ed25519`
-  - Windows：`C:\Users\Bing\AppData\Local\NexusAgentV3\identity_ed25519`
-  - VSC：`~/.local/nexus-agent-v3/identity_ed25519`
-- Registry 只保存 public key、key_id、设备元数据和批准状态。
-- 新设备注册后默认为 `pending`，必须批准为 `approved` 后才能领取任务。
+Each Agent owns a Nexus-specific Ed25519 private key. Registry stores only public identity and approval state. Signed claim/complete requests include canonical device ID, timestamp, nonce and request-body hash; replay and stale timestamps are rejected.
 
-## 2. 请求签名
+No shared fleet token is stored on Agents. `all`, `broadcast`, fuzzy aliases and target substitution are prohibited.
 
-Agent 对 claim 和 complete 请求签名，必须携带：
+## Execution boundary
 
-```text
-X-Nexus-Device
-X-Nexus-Key-Id
-X-Nexus-Timestamp
-X-Nexus-Nonce
-X-Nexus-Signature
-```
+A command or workspace operation must name one canonical device. If that device is offline, unapproved or lacks the requested runtime, the operation fails. Network/Broker failover may change transport only.
 
-Broker 验证：
+Dangerous operations remain explicit and reviewable: destructive filesystem/database actions, network/firewall/routing changes, reboots, private-key/password/token changes, storage formatting and changes outside the Nexus-managed SSH block.
 
-- device id；
-- approved public key；
-- key_id；
-- timestamp 窗口；
-- nonce 防重放；
-- request body hash。
+## Human passwords vs machine secrets
 
-## 3. SSH trust
+**Bitwarden Password Manager** is authoritative for human-facing passwords such as Nexus Dashboard, VSC/code-server and OpenList.
 
-- API identity 与 SSH identity 使用同一套 Nexus device keypair。
-- 每台设备只生成 `/etc/nexus-agent/identity_ed25519` 和 `/etc/nexus-agent/identity_ed25519.pub`。
-- Registry 通过 `/v3/ssh/authorized-keys` 发布 approved 设备 public keys；这些 public keys 同时是 API identity 和 SSH identity。
-- 同步脚本只改写 `authorized_keys` 中的 Nexus 管理区块：
-  - `### BEGIN NEXUS MANAGED SSH KEYS`
-  - `### END NEXUS MANAGED SSH KEYS`
-- 不使用 cron/timer 自动轮询；新设备批准后手动或安装时触发一次同步。
+**Bitwarden Secrets Manager** or platform-native secret stores are for machine/API credentials: Cloudflare/R2 tokens, Nexus admin/service keys, GitHub automation credentials, Agent-related machine credentials and similar unattended secrets.
 
-## 4. 命令执行边界
+Do not duplicate human passwords into Secrets Manager. If unattended verification is required, prefer a one-way hash or the platform's runtime-secret mechanism.
+## Dashboard security
 
-- 命令必须指定 canonical device id。
-- Broker 可以改变传输路径，但不能把逻辑目标改派到别的设备。
-- `n1` / `ax3600` 优先自领取；不能自领取时才通过 ThinkCenter managed target。
-- 高危命令默认拦截，除非显式配置 `NEXUS_V3_ALLOW_DANGEROUS=1` 并获得人工确认。
+`nexus.bings.app` Dashboard uses a Cloudflare Worker runtime secret and issues a `__Host-nexus_session` cookie with HttpOnly, Secure and SameSite=Strict. Login responses are `no-store`; open redirects are rejected. Password plaintext is absent from R2 and Git.
 
-高危操作包括但不限于：
+Public unauthenticated paths are intentionally limited to read-only release artifacts: README, installers, OpenAPI, ChatGPT prompt, release metadata and `/bootstrap/*`. Dashboard HTML and live status remain authenticated.
 
-- 删除大范围文件或数据库；
-- 修改网络、路由、防火墙、Tailscale、Cloudflare Tunnel；
-- 重启/关机；
-- 修改密码、密钥、token、authorized_keys 非 Nexus 管理区块；
-- 格式化磁盘、分区、擦除设备。
+## VSC
 
-## 5. Secret 处理
+VSC inbound SSH remains constrained by KU Leuven HPC certificate policy. Nexus must not bypass that policy with ordinary `authorized_keys`. VSC code-server stores a local Argon2 password hash and starts with `HASHED_PASSWORD`; the human plaintext remains only in Password Manager.
 
-不得提交或打印：
+## Repository and release hygiene
 
-- private key；
-- `NEXUS_V3_ADMIN_KEY`；
-- `NEXUS_CHATGPT_API_KEY`；
-- dashboard Basic Auth；
-- Cloudflare / Bitwarden / Supabase / browser session secrets；
-- cookie、localStorage、MFA 材料。
+Never commit private keys, browser cookies, MFA material, API keys, runtime databases, execution ledgers, `.env` secrets or Password Manager exports. GitHub `main` is the source of truth; GitHub Actions publishes a deliberate R2 subset and verifies exact objects/checksums.
 
-ChatGPT Remote 的 bearer token 存储在服务端 env 文件中，不进入 dashboard 静态页面。
+## Acceptance
 
-## 6. VSC 特殊限制
-
-VSC 已加入 Tailscale，但使用 userspace networking：
-
-- VSC outbound SSH tailnet 节点必须使用 `tailscale nc` 或 `ProxyCommand`；
-- 其他节点 inbound 到 VSC 会被 KU Leuven HPC SSH certificate policy 拦截；
-- 不能用普通 `authorized_keys` 变更绕过 HPC 登录策略。
-
-## 7. 验收标准
-
-不能只凭“服务 active”报告成功。至少需要：
-
-- registry/broker health；
-- device approved；
-- agent registered；
-- job completed；
-- exit_code 符合预期；
-- output 可验证；
-- 对 SSH trust，至少验证 public key 数量和一条真实 SSH 登录路径。
+Security-sensitive changes require more than `service active`: verify approval, signed job execution, exact target, real exit code, relevant key/cookie behavior, and absence of retired service/process paths.
