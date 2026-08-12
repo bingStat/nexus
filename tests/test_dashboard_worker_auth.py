@@ -18,9 +18,10 @@ def test_dashboard_uses_single_password_session_auth() -> None:
     assert 'name="username"' not in source
     assert 'Bitwarden Password Manager' in source
     assert 'Bitwarden Secrets Manager' not in source
-    assert "'/install.sh': 'install.sh'" in source
-    assert "path.startsWith('/bootstrap/')" in source
-    assert "path.startsWith('/docs/')" in source
+    assert "path === '/release.json'" in source
+    assert "'/install.sh': 'install.sh'" not in source
+    assert "path.startsWith('/bootstrap/')" not in source
+    assert "path.startsWith('/docs/')" not in source
 
 
 def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:

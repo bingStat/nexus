@@ -21,7 +21,7 @@ Alerts use consecutive-failure/recovery thresholds to suppress flapping. Ops sta
 
 ## Dashboard
 
-`nexus.bings.app` is a Cloudflare Worker + R2 application. The Dashboard requires the single Password Manager-backed login, while public release/install artifacts remain readable without a session. The UI renders standard roles separately from Agent runtime capability.
+`nexus.bings.app` is a Cloudflare Worker + R2 application. The Dashboard requires the single Password Manager-backed login. R2 stores only the Dashboard website asset and release metadata; project installers/docs remain on GitHub. The UI renders standard roles separately from Agent runtime capability.
 ## Release operations
 
 Every push to GitHub `main` triggers the authoritative R2 workflow:
@@ -42,7 +42,7 @@ Normal changes flow Victus → GitHub PR/main → GitHub Actions → R2. Do not 
 3. Confirm DevSpace/Shell runtime capabilities match the intended node class.
 4. Confirm no legacy Nexus services, duplicate Agents or legacy `.nexus-agent` processes have returned.
 5. Confirm the latest R2 workflow is green after a release change.
-6. Confirm Dashboard login and public `/install.sh` both behave as intended.
+6. Confirm Dashboard login works and `/release.json` identifies the current website deployment.
 
 ## Credential operations
 

@@ -78,7 +78,8 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "openwrt-agent" in installer
     assert "install_user_agent" in installer
     assert "user-agent" in installer
-    assert "https://nexus.bings.app/bootstrap" in installer
+    assert "https://raw.githubusercontent.com/bingStat/nexus/main" in installer
+    assert "https://nexus.bings.app/bootstrap" not in installer
     assert "cleanup_legacy" not in installer
     assert "managed-targets" not in installer
     assert "sync_ssh_authorized_keys.sh" in installer

@@ -23,7 +23,7 @@ Do not duplicate human passwords into Secrets Manager. If unattended verificatio
 
 `nexus.bings.app` Dashboard uses a Cloudflare Worker runtime secret and issues a `__Host-nexus_session` cookie with HttpOnly, Secure and SameSite=Strict. Login responses are `no-store`; open redirects are rejected. Password plaintext is absent from R2 and Git.
 
-Public unauthenticated paths are intentionally limited to read-only release artifacts: README, installers, OpenAPI, ChatGPT prompt, release metadata and `/bootstrap/*`. Dashboard HTML and live status remain authenticated.
+The only intentionally public website metadata path is `/release.json`. Dashboard HTML and live status remain authenticated. README, installers, docs, OpenAPI/prompt assets and source code are not stored in R2.
 
 ## VSC
 

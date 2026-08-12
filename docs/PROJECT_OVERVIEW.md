@@ -27,7 +27,7 @@ Nexus does not provide cross-device task substitution. A device may be reached t
 
 ## Source and production truth
 
-GitHub `bingStat/nexus` `main` is the code source of truth. Victus is the only development working copy. Production nodes retain installed runtime/configuration only. `nexus.bings.app` is backed by Cloudflare R2 and receives its release tree automatically from GitHub Actions.
+GitHub `bingStat/nexus` `main` is the code and documentation source of truth. Victus is the only development working copy. Production nodes retain installed runtime/configuration only. `nexus.bings.app` uses R2 only for its website static asset and deployment metadata.
 ## Product boundaries
 
 Nexus owns device identity, approval, Regional Brokers, job lifecycle, presence, Remote API/MCP, fleet visualization, low-frequency ops and a thin DevSpace adapter. Upstream DevSpace owns workspace/worktree/read/patch/process-session semantics. Agent Council is an optional review/orchestration layer, not another control plane.

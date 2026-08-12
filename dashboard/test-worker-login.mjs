@@ -7,9 +7,7 @@ const { default: worker } = await import(moduleUrl);
 
 const objects = new Map([
   ['index.html', '<html>Nexus dashboard</html>'],
-  ['README.md', '# Nexus'],
-  ['install.sh', '#!/bin/sh\necho nexus'],
-  ['bootstrap/nexus_v3/agent.py', 'print(\"agent\")'],
+  ['release.json', '{\"commit\":\"test\"}'],
 ]);
 const env = {
   NEXUS_PASSWORD: 'correct horse battery staple',
@@ -26,15 +24,13 @@ async function request(path, options = {}) {
   return worker.fetch(new Request(`https://nexus.bings.app${path}`, options), env);
 }
 
-let response = await request('/install.sh');
+let response = await request('/release.json');
 assert.equal(response.status, 200);
-assert.match(await response.text(), /echo nexus/);
-response = await request('/bootstrap/nexus_v3/agent.py');
-assert.equal(response.status, 200);
-assert.match(await response.text(), /agent/);
+assert.match(await response.text(), /test/);
+response = await request('/install.sh');
+assert.equal(response.status, 404);
 response = await request('/README.md');
-assert.equal(response.status, 200);
-assert.equal(await response.text(), '# Nexus');
+assert.equal(response.status, 404);
 
 response = await request('/');
 assert.equal(response.status, 302);
