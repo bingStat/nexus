@@ -16,6 +16,8 @@ def test_dashboard_uses_single_password_session_auth() -> None:
     assert "WWW-Authenticate" not in source
     assert "AUTH_USER" not in source
     assert 'name="username"' not in source
+    assert 'Bitwarden Password Manager' in source
+    assert 'Bitwarden Secrets Manager' not in source
 
 
 def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:
