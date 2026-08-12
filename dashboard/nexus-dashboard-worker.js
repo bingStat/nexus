@@ -130,24 +130,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
-    const publicArtifacts = {
-      '/README.md': 'README.md',
-      '/install.sh': 'install.sh',
-      '/install.ps1': 'install.ps1',
-      '/chatgpt-prompt.md': 'nexus-v3-chatgpt-remote-prompt.md',
-      '/openapi.json': 'nexus-v3-remote-control-openapi.json',
-      '/release.json': 'release.json',
-    };
-    if (request.method === 'GET' && publicArtifacts[path]) {
-      return serveR2(env, publicArtifacts[path]);
+    if (request.method === 'GET' && path === '/release.json') {
+      return serveR2(env, 'release.json');
     }
-    if (request.method === 'GET' && path.startsWith('/bootstrap/')) {
-      if (path.includes('..')) return new Response('Bad Request', { status: 400 });
-      return serveR2(env, path.slice(1), 'public, max-age=300');
-    }
-    if (request.method === 'GET' && (path.startsWith('/docs/') || path === '/AGENTS.md' || path === '/NEXUS_CHATGPT_PROMPT.md' || path === '/ops/README.md')) {
-      if (path.includes('..')) return new Response('Bad Request', { status: 400 });
-      return serveR2(env, path.slice(1));
+
+    const websitePaths = new Set(['/', '/index.html', '/status.json', '/login', '/logout']);
+    if (!websitePaths.has(path)) {
+      return new Response('Not Found', { status: 404, headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }) });
     }
 
     const password = env.NEXUS_PASSWORD;
@@ -200,12 +189,6 @@ export default {
     const routes = {
       '/': ['index.html', 'text/html; charset=utf-8'],
       '/index.html': ['index.html', 'text/html; charset=utf-8'],
-      '/README.md': ['README.md', 'text/markdown; charset=utf-8'],
-      '/install.sh': ['install.sh', 'application/x-sh; charset=utf-8'],
-      '/install.ps1': ['install.ps1', 'text/plain; charset=utf-8'],
-      '/chatgpt-prompt.md': ['nexus-v3-chatgpt-remote-prompt.md', 'text/markdown; charset=utf-8'],
-      '/openapi.json': ['nexus-v3-remote-control-openapi.json', 'application/json; charset=utf-8'],
-      '/release.json': ['release.json', 'application/json; charset=utf-8'],
       '/status.json': ['status.json', 'application/json; charset=utf-8'],
     };
     const route = routes[path];

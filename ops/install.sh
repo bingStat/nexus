@@ -2,7 +2,7 @@
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
-SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://nexus.bings.app/bootstrap}"
+SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/main}"
 INSTALL_DIR="${NEXUS_OPS_INSTALL_DIR:-/opt/nexus-ops}"
 CONFIG_DIR="/etc/nexus"
 STATE_DIR="/var/lib/nexus/ops"

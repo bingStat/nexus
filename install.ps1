@@ -6,7 +6,7 @@ param(
     [string[]]$AllowedRoots = @($env:USERPROFILE)
 )
 $ErrorActionPreference = "Stop"
-$SourceBase = if ($env:NEXUS_SOURCE_BASE) { $env:NEXUS_SOURCE_BASE.TrimEnd('/') } else { "https://nexus.bings.app/bootstrap" }
+$SourceBase = if ($env:NEXUS_SOURCE_BASE) { $env:NEXUS_SOURCE_BASE.TrimEnd('/') } else { "https://raw.githubusercontent.com/bingStat/nexus/main" }
 
 function Get-Python {
     $preferred = @("$env:USERPROFILE\miniconda3\python.exe", "$env:USERPROFILE\anaconda3\python.exe")

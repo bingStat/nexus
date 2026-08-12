@@ -35,4 +35,4 @@ ThinkDesk reverse-tunnel material is separated under ThinkDesk-owned paths; it i
 
 ## Reconciliation rules going forward
 
-Do not recreate a VSC source clone to solve an operational problem. Fix the canonical repository on Victus, merge through GitHub, publish R2 automatically, then reinstall/update the VSC runtime from the public production installer. Historical patches remain local recovery material under ignored Victus `.bak` only.
+Do not recreate a VSC source clone to solve an operational problem. Fix the canonical repository on Victus, merge through GitHub, then reinstall/update the VSC runtime from the GitHub canonical installer. R2 publication is only for the Dashboard website. Historical patches remain local recovery material under ignored Victus `.bak` only.

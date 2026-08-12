@@ -27,10 +27,10 @@ Do not reinstall the entire fleet before locating the failing layer.
 Only one v3 Agent instance should exist per canonical device ID.
 ## 3. Reinstall the exact node only
 
-Use the public R2-backed installer:
+Use the canonical GitHub installer:
 
 ```bash
-curl -fsSL https://nexus.bings.app/install.sh | sudo sh -s -- agent <device-id>
+curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/main/install.sh | sudo sh -s -- agent <device-id>
 ```
 
 For VSC/HPC use `user-agent`; for N1/AX3600 use `openwrt-agent`; Windows uses `install.ps1`. Reinstallers clean known retired paths but preserve current device identity unless that identity is explicitly removed.

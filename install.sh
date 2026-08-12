@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://nexus.bings.app/bootstrap}"
+SOURCE_BASE="${NEXUS_SOURCE_BASE:-https://raw.githubusercontent.com/bingStat/nexus/main}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PYTHON="${PYTHON:-python3}"
 

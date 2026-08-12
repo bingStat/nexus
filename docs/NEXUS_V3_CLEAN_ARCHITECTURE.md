@@ -44,7 +44,7 @@ Presence is updated by the signed `/v3/jobs/claim` long-poll already required fo
 
 ## Distribution boundary
 
-GitHub `main` is canonical code. GitHub Actions stages the R2 release, including public install/bootstrap artifacts, then performs checksum sync and exact-object verification. `nexus.bings.app` protects the Dashboard and `/status.json`, while install scripts, README, OpenAPI, prompt, release metadata and `/bootstrap/*` are read-only public release assets.
+GitHub `main` is canonical code and documentation. R2 is only the static website store for `nexus.bings.app`: `index.html` plus generated `release.json`. Installers, README, docs, OpenAPI/prompt assets and source code are not mirrored to R2.
 
 ## Current persistence
 
