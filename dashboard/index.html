@@ -526,7 +526,121 @@
             .device-list { max-height: 210px; }
         }
 
-    </style>
+
+        /* Tabler-inspired compact operations layout: self-contained, no CDN/runtime dependency. */
+        body { background-image: none; background: #0b1220; }
+        header {
+            min-height: 44px; padding: 0.38rem 0.85rem;
+            background: #111a2b; border-bottom-color: rgba(122,146,184,.24);
+            backdrop-filter: none;
+        }
+        .logo { gap: .48rem; }
+        .logo-icon { width: 26px; height: 26px; border-radius: 7px; box-shadow: none; font-size: .8rem; }
+        h1 { font-size: .86rem; letter-spacing: 1.6px; }
+        .tagline { font-size: .5rem; letter-spacing: .5px; }
+        .header-right { gap: .55rem; }
+        .live-badge { padding: .16rem .48rem; font-size: .58rem; border-radius: 6px; }
+        #last-updated { font-size: .54rem; }
+
+        .stats-bar {
+            min-height: 34px; gap: .3rem; padding: .32rem .7rem;
+            background: #0e1727; border-bottom-color: rgba(122,146,184,.18);
+        }
+        .stat-pill {
+            gap: .28rem; padding: .18rem .48rem; border-radius: 6px;
+            background: transparent; border-color: rgba(122,146,184,.18);
+        }
+        .stat-pill-icon { display: none; }
+        .stat-pill-val { font-size: .72rem; }
+        .stat-pill-lbl { font-size: .48rem; letter-spacing: .6px; }
+
+        .page {
+            grid-template-columns: minmax(0,1fr) 258px;
+            height: calc(100vh - 79px); gap: 8px; padding: 8px;
+            background: #0b1220;
+        }
+        #topo-panel {
+            border: 1px solid rgba(122,146,184,.22); border-radius: 8px;
+            background: #101a2b; overflow: hidden;
+        }
+        #topo-title { top: .62rem; left: .75rem; font-size: .54rem; letter-spacing: 1.1px; }
+        #topo-badge { top: .5rem; right: .65rem; font-size: .5rem; padding: .12rem .38rem; border-radius: 5px; }
+        .topo-actions { top: 2rem; right: .65rem; }
+        .topo-action-btn { font-size: .5rem; padding: .2rem .38rem; border-radius: 5px; }
+        .topo-hint { left: .65rem; bottom: .55rem; font-size: .5rem; padding: .22rem .42rem; border-radius: 5px; }
+        .topo-node-inner { width: 46px; height: 46px; font-size: 1.05rem; margin-bottom: .25rem; }
+        .topo-label { font-size: .52rem; letter-spacing: .55px; }
+
+        .sidebar {
+            gap: 8px; background: transparent; overflow-y: auto; padding: 0;
+            scrollbar-width: thin;
+        }
+        .panel {
+            background: #111b2d; border: 1px solid rgba(122,146,184,.22);
+            border-radius: 8px; overflow: hidden; flex: 0 0 auto;
+        }
+        .panel-header {
+            min-height: 31px; padding: .34rem .48rem;
+            background: #152136; border-bottom-color: rgba(122,146,184,.18);
+        }
+        .panel-title { font-size: .52rem; letter-spacing: .9px; }
+        .panel-badge { font-size: .48rem; padding: .09rem .28rem; border-radius: 5px; color: var(--muted); }
+        .nodes-panel { min-height: 0; }
+        .device-list { max-height: 314px; padding: .2rem; }
+        .device-item {
+            gap: .38rem; padding: .28rem .34rem; margin: 0; border-radius: 5px;
+            background: transparent; border: 0; border-bottom: 1px solid rgba(122,146,184,.12);
+        }
+        .device-item:last-child { border-bottom: 0; }
+        .device-item:hover, .device-item.selected { background: rgba(79,142,255,.11); border-color: rgba(79,142,255,.18); }
+        .device-status-ring { width: 22px; height: 22px; font-size: .62rem; }
+        .device-name { font-size: .65rem; }
+        .device-name-row { gap: .25rem; }
+        .device-meta { font-size: .47rem; line-height: 1.15; }
+        .role-row { gap: .12rem; margin-top: .12rem; max-height: 1.15rem; overflow: hidden; flex-wrap: nowrap; }
+        .role-chip, .runtime-chip { font-size: .42rem; padding: .11rem .2rem; border-radius: 4px; }
+        .role-chip.more { color: var(--muted); background: transparent; border-color: rgba(122,146,184,.2); }
+        .device-pill { font-size: .43rem; padding: .08rem .25rem; border-radius: 4px; }
+
+        .compact-details > summary { cursor: pointer; list-style: none; user-select: none; }
+        .compact-details > summary::-webkit-details-marker { display: none; }
+        .compact-details > summary::after { content: '?'; color: var(--muted); font-size: .8rem; margin-left: .3rem; transition: transform .15s; }
+        .compact-details[open] > summary::after { transform: rotate(90deg); }
+        .compact-details > summary .panel-badge { margin-left: auto; }
+        .service-detail { padding: .38rem; max-height: 180px; overflow-y: auto; }
+        .service-detail-head { gap: .3rem; margin-bottom: .25rem; }
+        .service-detail-icon { width: 22px; height: 22px; border-radius: 5px; }
+        .service-detail-name { font-size: .66rem; }
+        .service-detail-role { font-size: .47rem; }
+        .service-detail-tags { margin: .25rem 0 .3rem; gap: .12rem; }
+        .service-grid { grid-template-columns: 1fr; gap: .18rem; }
+        .service-card { padding: .24rem .3rem; font-size: .5rem; border-radius: 5px; }
+        .task-log { max-height: 190px; padding: .25rem; }
+        .task-entry { gap: .3rem; padding: .32rem .38rem; margin-bottom: .2rem; border-radius: 5px; }
+        .task-status-icon { font-size: .66rem; }
+        .task-device, .task-time { font-size: .46rem; }
+        .task-cmd { font-size: .54rem; }
+        .task-output { font-size: .48rem; padding: .28rem .35rem; max-height: 46px; }
+        .empty-state { padding: .65rem .35rem; font-size: .58rem; }
+        .empty-state .emoji { display: none; }
+
+        @media (max-width: 980px) {
+            .page { grid-template-columns: 1fr; grid-template-rows: 58vh auto; height: auto; min-height: calc(100vh - 79px); }
+            .sidebar { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+            .nodes-panel { grid-column: 1 / -1; }
+            .device-list { max-height: 245px; }
+        }
+        @media (max-width: 620px) {
+            .header-right #last-updated { display: none; }
+            .stats-bar { gap: .18rem; }
+            .stat-pill { padding: .15rem .3rem; }
+            .page { padding: 5px; gap: 5px; }
+            .sidebar { grid-template-columns: 1fr; gap: 5px; }
+        }
+
+            .live-badge.status-error { color: var(--red); background: rgba(255,77,109,.08); border-color: rgba(255,77,109,.25); }
+        .live-badge.status-error .live-dot { background: var(--red); animation: none; box-shadow: none; }
+</style>
 </head>
 <body>
 
@@ -539,7 +653,7 @@
         </div>
     </div>
     <div class="header-right">
-        <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+        <div class="live-badge" id="live-badge"><div class="live-dot"></div><span id="live-label">LIVE</span></div>
         <div id="last-updated">--</div>
     </div>
 </header>
@@ -584,59 +698,31 @@
     </div>
 
     <!-- ─── RIGHT: SIDEBAR ─── -->
-    <div class="sidebar">
-
-        <!-- Node list -->
-        <div class="panel">
+    <aside class="sidebar">
+        <section class="panel nodes-panel">
             <div class="panel-header">
-                <span class="panel-title">🗺 Cluster Nodes</span>
-                <span class="panel-badge" id="node-count-badge" style="background:rgba(79,142,255,0.15);color:var(--blue);">Loading...</span>
+                <span class="panel-title">Cluster Nodes</span>
+                <span class="panel-badge" id="node-count-badge">Loading...</span>
             </div>
-            <div class="device-list" id="device-list">
-                <div class="empty-state"><span class="emoji"><span class="spin">⚙️</span></span>Connecting...</div>
-            </div>
-        </div>
+            <div class="device-list" id="device-list"><div class="empty-state">Connecting...</div></div>
+        </section>
 
-        <!-- Selected node services -->
-        <div class="panel">
-            <div class="panel-header">
-                <span class="panel-title">🧩 Node Services</span>
-                <span class="panel-badge" id="service-badge" style="background:rgba(34,211,238,0.1);color:var(--cyan);">Click node</span>
-            </div>
-            <div class="service-detail" id="service-detail">
-                <div class="empty-state"><span class="emoji">👆</span>Click a node to inspect services</div>
-            </div>
-        </div>
+        <details class="panel compact-details inspector-panel" open>
+            <summary class="panel-header">
+                <span class="panel-title">Inspector</span>
+                <span class="panel-badge" id="service-badge">Select node</span>
+            </summary>
+            <div class="service-detail" id="service-detail"><div class="empty-state">Select a node to inspect roles and services</div></div>
+        </details>
 
-        <!-- Console -->
-        <div class="panel">
-            <div class="panel-header">
-                <span class="panel-title">💻 Console</span>
-            </div>
-            <div class="console-area">
-                <div class="console-row">
-                    <select id="target-device"><option value="">Select Node...</option></select>
-                </div>
-                <div class="console-row">
-                    <input id="cmd-input" type="text" placeholder="Read-only: use ChatGPT Action / MCP" autocomplete="off">
-                    <button id="send-btn" onclick="sendCommand()">INFO</button>
-                </div>
-                <div class="console-output" id="console-output"><span class="console-line-muted">// Read-only public dashboard. Use ChatGPT Action / MCP for execution.</span></div>
-            </div>
-        </div>
-
-        <!-- Task log (flex grows) -->
-        <div class="panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-            <div class="panel-header">
-                <span class="panel-title">📋 Task History</span>
-                <span class="panel-badge" id="task-badge" style="background:rgba(245,166,35,0.1);color:var(--orange);">—</span>
-            </div>
-            <div class="task-log" id="task-log">
-                <div class="empty-state"><span class="emoji">📭</span>No recent tasks</div>
-            </div>
-        </div>
-
-    </div>
+        <details class="panel compact-details task-panel">
+            <summary class="panel-header">
+                <span class="panel-title">Recent Tasks</span>
+                <span class="panel-badge" id="task-badge">?</span>
+            </summary>
+            <div class="task-log" id="task-log"><div class="empty-state">No recent tasks</div></div>
+        </details>
+    </aside>
 </div>
 
 <script>
@@ -646,7 +732,7 @@ const POLL_INTERVAL = 30000;
 let devicesData = [];
 let activeFlows = new Set(['oracle', 'thinkcenter', 'n1']);
 let selectedNodeId = null;
-let statusSourceLabel = 'snapshot';
+let statusSourceLabel = 'unavailable';
 let lastStatusFetchedAt = null;
 const LAYOUT_STORAGE_KEY = 'nexus:v3-dashboard-layout';
 let layoutPan = { x: 0, y: 0 };
@@ -676,10 +762,14 @@ function deviceRoleLabel(device, meta = {}) {
     return deviceRoles(device, meta).join(' \u00b7 ');
 }
 
-function roleChipsHtml(device, meta = {}) {
-    return deviceRoles(device, meta).map((role, index) =>
+function roleChipsHtml(device, meta = {}, compact = false) {
+    const roles = deviceRoles(device, meta);
+    const visible = compact ? roles.slice(0, 2) : roles;
+    const chips = visible.map((role, index) =>
         `<span class="role-chip${index === 0 ? ' primary' : ''}">${escHtml(role)}</span>`
-    ).join('');
+    );
+    if (compact && roles.length > visible.length) chips.push(`<span class="role-chip more">+${roles.length - visible.length}</span>`);
+    return chips.join('');
 }
 
 function deviceRuntimeLabel(device, meta = {}) {
@@ -720,7 +810,7 @@ function normalizeDeviceRecord(raw) {
         device_id: deviceId,
         name: raw.name || meta.label || raw.hostname || deviceId,
         status: String(raw.runtime_status || raw.status || 'unknown').toLowerCase(),
-        last_seen: raw.last_seen || raw.lastSeen || raw.heartbeat_at || raw.updated_at || raw.updatedAt || raw.approved_at || raw.created_at || '',
+        last_seen: raw.last_seen_at || raw.last_seen || raw.lastSeen || raw.heartbeat_at || raw.updated_at || raw.updatedAt || raw.approved_at || raw.created_at || '',
         ip: raw.ip || raw.public_ip || raw.tailscale_ip || '',
     };
 }
@@ -744,7 +834,7 @@ async function fetchDevices() {
     } catch (err) {
         console.warn('Live Nexus status unavailable; showing devices as unknown', err);
     }
-    statusSourceLabel = 'snapshot';
+    statusSourceLabel = 'unavailable';
     lastStatusFetchedAt = new Date().toISOString();
     return fallbackDevicesSnapshot();
 }
@@ -753,7 +843,7 @@ async function fetchTasks() {
         { target_device: 'oracle', status: 'completed', command: 'systemctl is-active nexus-v3-registry nexus-v3-eu-broker nexus-v3-agent', output: 'active\nactive\nactive', created_at: isoMinutesAgo(5) },
         { target_device: 'oracle', status: 'completed', command: 'curl http://127.0.0.1:18101/v3/health && curl http://127.0.0.1:18102/v3/health', output: 'Registry 3.0.0 OK; EU Broker 3.0.1 OK', created_at: isoMinutesAgo(6) },
         { target_device: 'cluster', status: 'completed', command: 'GET /v3/ssh/authorized-keys', output: 'approved SSH trust: n1, oracle, thinkcenter', created_at: isoMinutesAgo(8) },
-        { target_device: 'nexus.bings.app', status: 'completed', command: 'Cloudflare Worker + R2 dashboard', output: 'Basic Auth enabled; public dashboard assets verified', created_at: isoMinutesAgo(10) },
+        { target_device: 'nexus.bings.app', status: 'completed', command: 'Cloudflare Worker + R2 dashboard', output: 'Single-password Worker session; live status proxy enabled', created_at: isoMinutesAgo(10) },
     ];
 }
 async function postCommand() { return { ok: false, reason: 'public dashboard is read-only' }; }
@@ -1150,7 +1240,7 @@ function renderTopology(devices) {
     svg.appendChild(svgText(cfx, r2y + 4, '🪣', '#fff', '12'));
     svg.appendChild(svgText(cfx, r2y - 22, 'R2 STORAGE', '#f48120', '7'));
 
-    ['nexus.bings.app', 'install.sh', 'openapi.json'].forEach((name, i) => {
+    ['index.html', 'release.json'].forEach((name, i) => {
         const chip = document.createElement('div');
         chip.className = 'svc-chip svc-cf';
         chip.textContent = name;
@@ -1310,18 +1400,20 @@ function renderDevices(devices) {
     document.getElementById('stat-online').textContent = online;
     document.getElementById('node-count-badge').textContent = `${online}/${devicesData.length} Online`;
 
-    const currentVal = select.value;
-    if (select.options.length - 1 !== devicesData.length) {
-        select.innerHTML = '<option value="">Select Node...</option>';
-        devicesData.forEach(d => {
-            const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '🖥️' };
-            const opt = document.createElement('option');
-            opt.value = d.device_id;
-            opt.textContent = `${meta.icon} ${d.name || d.device_id}`;
-            select.appendChild(opt);
-        });
+    if (select) {
+        const currentVal = select.value;
+        if (select.options.length - 1 !== devicesData.length) {
+            select.innerHTML = '<option value="">Select Node...</option>';
+            devicesData.forEach(d => {
+                const meta = DEVICE_META[d.device_id] || DEVICE_META[d.device_id.toLowerCase()] || { icon: '\uD83D\uDDA5\ufe0f' };
+                const opt = document.createElement('option');
+                opt.value = d.device_id;
+                opt.textContent = `${meta.icon} ${d.name || d.device_id}`;
+                select.appendChild(opt);
+            });
+        }
+        if (currentVal) select.value = currentVal;
     }
-    if (currentVal) select.value = currentVal;
 
     container.innerHTML = '';
     devicesData.forEach(d => {
@@ -1339,7 +1431,7 @@ function renderDevices(devices) {
                     ${runtimeChipHtml(d, meta)}
                 </div>
                 <div class="device-meta">${escHtml(meta.os)} \u00b7 ${escHtml((d.ip || d.public_ip) && geoCache[d.ip || d.public_ip] ? geoCache[d.ip || d.public_ip] : meta.location)}</div>
-                <div class="role-row">${roleChipsHtml(d, meta)}</div>
+                <div class="role-row">${roleChipsHtml(d, meta, true)}</div>
                 <div class="device-meta" style="margin-top:0.2rem">Last seen: ${timeSince(d.last_seen)}</div>
             </div>
             <span class="device-pill pill-${visual.key}">${visual.label}</span>
@@ -1400,7 +1492,7 @@ async function sendCommand() {
     const output = document.getElementById('console-output');
     output.innerHTML = '<span class="console-line-muted">// Public dashboard is read-only. Use ChatGPT Action / MCP Remote API for execution.</span>';
 }
-document.getElementById('cmd-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendCommand(); });
+document.getElementById('cmd-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendCommand(); });
 
 // ─── POLL LOOP ───
 const geoCache = {
@@ -1426,7 +1518,12 @@ async function refresh() {
     renderTasks(tasks);
     renderTopology(devices);
     const sourceTime = lastStatusFetchedAt ? new Date(lastStatusFetchedAt).toLocaleTimeString() : STATIC_UPDATED_AT;
-    document.getElementById('last-updated').textContent = `Updated ${sourceTime} · ${statusSourceLabel}`;
+    document.getElementById('last-updated').textContent = `Updated ${sourceTime} ? ${statusSourceLabel}`;
+    const liveBadge = document.getElementById('live-badge');
+    const liveLabel = document.getElementById('live-label');
+    const liveOk = statusSourceLabel !== 'unavailable';
+    liveBadge?.classList.toggle('status-error', !liveOk);
+    if (liveLabel) liveLabel.textContent = liveOk ? 'LIVE' : 'STATUS ERROR';
 }
 
 // Redraw topology on resize

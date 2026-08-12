@@ -3,6 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "dashboard" / "nexus-dashboard-worker.js"
 WRANGLER = ROOT / "dashboard" / "wrangler.toml"
+INDEX = ROOT / "dashboard" / "index.html"
 
 
 def test_dashboard_uses_single_password_session_auth() -> None:
@@ -33,3 +34,16 @@ def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:
     assert "NEXUS_CHATGPT_API_KEY" not in config
     assert 'NEXUS_STATUS_SOURCE_URL = "https://nexus-global-api.bings.app/api/status"' in config
     assert "AUTH_USER" not in config
+
+
+def test_dashboard_compact_layout_and_live_status_contract() -> None:
+    source = INDEX.read_text(encoding="utf-8")
+    assert "raw.last_seen_at" in source
+    assert "STATUS ERROR" in source
+    assert 'class="panel compact-details inspector-panel"' in source
+    assert 'class="panel compact-details task-panel"' in source
+    assert 'id="console-output"' not in source
+    assert 'id="cmd-input"' not in source
+    assert "roles.slice(0, 2)" in source
+    assert "['index.html', 'release.json']" in source
+    assert "grid-template-columns: minmax(0,1fr) 258px" in source
