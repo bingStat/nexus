@@ -56,10 +56,11 @@ jobs:
       - name: Stage authoritative R2 release
         run: python scripts/stage_r2_release.py "$RUNNER_TEMP/nexus-r2-release"
 
-      - name: Install rclone
+      - name: Install rclone from official distribution
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq rclone
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 2 https://rclone.org/install.sh -o "$RUNNER_TEMP/install-rclone.sh"
+          sudo bash "$RUNNER_TEMP/install-rclone.sh"
           rclone version
 
       - name: Validate R2 credentials
