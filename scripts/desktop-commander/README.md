@@ -1,6 +1,6 @@
 # Desktop Commander fleet deployment
 
-This directory is the canonical recovery point for Desktop Commander remote access used by Nexus-managed machines.
+This directory stores canonical Desktop Commander deployment/recovery scripts. Desktop Commander is independent from Nexus; Nexus is only the repository that stores these scripts.
 
 ## Current stable baseline
 
@@ -26,16 +26,16 @@ Victus WSL uses the same systemd pattern and additionally pins `DESKTOP_COMMANDE
 
 Victus uses Windows Task Scheduler because it is not a systemd host:
 
-- runtime: `%LOCALAPPDATA%\NexusDesktopCommander`;
-- `NexusDesktopCommanderRemote` launches the hidden PowerShell runner;
-- `NexusDesktopCommanderRemote-Watchdog` checks and restores the runner;
+- runtime: `%LOCALAPPDATA%\DesktopCommanderRemote`;
+- `DesktopCommanderRemote` launches the hidden PowerShell runner;
+- `DesktopCommanderRemote-Watchdog` checks and restores the runner;
 - the runner uses a file lock and `remote --persist-session`.
 
 Do not replace this stable task-based deployment with a foreground `npx` process.
 
 ### VSC
 
-VSC has no fleet-managed root system service, so `vsc.sh` reproduces the same invariants with a detached user-space watchdog.
+VSC has no fleet-managed root system service, so `install-vsc-desktop-commander.sh` reproduces the same invariants with a detached user-space watchdog.
 
 Persistent runtime defaults to:
 
@@ -43,29 +43,29 @@ Persistent runtime defaults to:
 
 The canonical source file is:
 
-`scripts/desktop-commander/vsc.sh`
+`scripts/desktop-commander/install-vsc-desktop-commander.sh`
 
-The runtime gets a self-contained copy at `$BASE/vsc.sh`; logs, locks, npm runtime and state stay outside Git.
+The runtime gets a self-contained copy at `$BASE/desktop-commander-vsc.sh`; logs, locks, npm runtime and state stay outside Git.
 ## VSC recovery commands
 
 From a Nexus checkout on VSC:
 
 ```bash
-bash scripts/desktop-commander/vsc.sh install
-bash scripts/desktop-commander/vsc.sh status
-bash scripts/desktop-commander/vsc.sh restart
+bash scripts/desktop-commander/install-vsc-desktop-commander.sh install
+bash scripts/desktop-commander/install-vsc-desktop-commander.sh status
+bash scripts/desktop-commander/install-vsc-desktop-commander.sh restart
 ```
 
 After the first installation, manual recovery does not require the repository checkout:
 
 ```bash
-/vsc-hard-mounts/leuven-data/356/vsc35603/services/desktop-commander/vsc.sh restart
+/vsc-hard-mounts/leuven-data/356/vsc35603/services/desktop-commander/desktop-commander-vsc.sh restart
 ```
 
 To inspect the latest state:
 
 ```bash
-/vsc-hard-mounts/leuven-data/356/vsc35603/services/desktop-commander/vsc.sh status
+/vsc-hard-mounts/leuven-data/356/vsc35603/services/desktop-commander/desktop-commander-vsc.sh status
 tail -f /vsc-hard-mounts/leuven-data/356/vsc35603/services/desktop-commander/watchdog.log
 ```
 
