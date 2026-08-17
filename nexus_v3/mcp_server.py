@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 from typing import Any
 
@@ -22,6 +23,44 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
 )
+
+
+# ---------------------------------------------------------------------------
+# Bearer-token auth middleware
+# When NEXUS_MCP_BEARER_TOKEN is set every request must carry
+# "Authorization: Bearer <token>". Requests to /health are always allowed.
+# ---------------------------------------------------------------------------
+
+_UNPROTECTED = {"/health", "/"}
+
+def _make_auth_middleware(app: Any, token: str) -> Any:
+    """Wrap an ASGI app with a simple constant-time Bearer token check."""
+    token_bytes = token.encode()
+
+    async def middleware(scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            path: str = scope.get("path", "")
+            if path not in _UNPROTECTED:
+                headers = dict(scope.get("headers", []))
+                auth = headers.get(b"authorization", b"").decode()
+                prefix = "Bearer "
+                supplied = auth[len(prefix):].encode() if auth.startswith(prefix) else b""
+                if not hmac.compare_digest(supplied, token_bytes):
+                    body = b'{"error":"unauthorized"}'
+                    await send({
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                            (b"content-length", str(len(body)).encode()),
+                            (b"www-authenticate", b'Bearer realm="Nexus MCP"'),
+                        ],
+                    })
+                    await send({"type": "http.response.body", "body": body})
+                    return
+        await app(scope, receive, send)
+
+    return middleware
 
 
 @mcp.tool()
@@ -141,4 +180,31 @@ def get_job(job_id: str, region: str) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    _bearer = os.getenv("NEXUS_MCP_BEARER_TOKEN", "").strip()
+    _bind = os.getenv("NEXUS_V3_MCP_BIND", "127.0.0.1")
+    _port = int(os.getenv("NEXUS_V3_MCP_PORT", "18130"))
+
+    if _bearer:
+        # Detect the correct ASGI app getter across FastMCP versions
+        _asgi_getter = (
+            getattr(mcp, "streamable_http_app", None)
+            or getattr(mcp, "http_app", None)
+            or getattr(mcp, "get_asgi_app", None)
+        )
+        if _asgi_getter is not None:
+            import uvicorn  # type: ignore[import-untyped]
+            _raw_app = _asgi_getter()
+            _app = _make_auth_middleware(_raw_app, _bearer)
+            uvicorn.run(_app, host=_bind, port=_port, log_level="warning")
+        else:
+            # FastMCP version does not expose an ASGI app; fall back and warn
+            import sys
+            print(
+                "WARNING: NEXUS_MCP_BEARER_TOKEN is set but this FastMCP version "
+                "does not expose an ASGI app — running without auth. "
+                "Upgrade mcp>=1.26 to enable auth.",
+                file=sys.stderr,
+            )
+            mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="streamable-http")

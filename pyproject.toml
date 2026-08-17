@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-remote = ["mcp[cli]>=1.26,<2"]
+remote = ["mcp[cli]>=1.26,<2", "uvicorn"]
 dev = ["pytest>=8"]
 
 [tool.setuptools.packages.find]

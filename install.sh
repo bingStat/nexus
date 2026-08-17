@@ -469,8 +469,10 @@ cleanup_retired_user() {
 install_user_agent() {
   [ "$(id -u)" -ne 0 ] || fail "user-agent mode must run as a normal user, not root"
   cleanup_retired_user
-  device_id="${1:-${NEXUS_DEVICE_ID:-}}"
-  [ -n "$device_id" ] || fail "user-agent mode requires canonical device id"
+  device_id="${1:-${NEXUS_DEVICE_ID:-auto}}"
+  if [ "$device_id" = "auto" ] || [ -z "$device_id" ]; then
+    device_id="$(hostname -s 2>/dev/null || hostname | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_.-')"
+  fi
   case "$device_id" in n1|ax3600) fail "$device_id requires openwrt-agent" ;; esac
 
   registry_url="${NEXUS_V3_REGISTRY_URL:-https://nexus-global-api.bings.app}"
@@ -566,9 +568,36 @@ EOF
   sleep 2
   pid="$(cat "$install_dir/agent.pid" 2>/dev/null || true)"
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || fail "user agent did not start"
-  printf 'Nexus user-local v3 Agent installed for %s at %s\n' "$device_id" "$install_dir"
-  printf 'Persistence: managed block in %s; no root/systemd required.\n' "$profile"
+
+  approval_status="pending (awaiting cluster approval)"
+  admin_key="${NEXUS_V3_ADMIN_KEY:-}"
+  if [ -n "$admin_key" ]; then
+    approve_resp="$(curl -s -X POST -H "X-Nexus-Admin-Key: $admin_key" -H "Content-Type: application/json" -d '{}' "$registry_url/v3/admin/devices/$device_id/approve" 2>/dev/null || true)"
+    if echo "$approve_resp" | grep -q '"status":"approved"'; then
+      approval_status="Approved & Active"
+    fi
+  fi
+
+  printf '\n================================================================\n'
+  printf '        Nexus v3 User Agent Installed Successfully              \n'
+  printf '================================================================\n'
+  printf ' Device ID:     %s\n' "$device_id"
+  printf ' Platform:      %s\n' "$(uname -srm 2>/dev/null || uname -a)"
+  printf ' Install Dir:   %s\n' "$install_dir"
+  printf ' Persistence:   managed block in %s\n' "$profile"
+  printf ' Registry:      %s\n' "$registry_url"
+  printf ' Broker:        %s\n' "$broker_url"
+  printf ' Cluster State: %s\n' "$approval_status"
+  if [ -n "$devspace_bridge" ]; then
+    printf ' DevSpace:      Enabled (bridge: %s)\n' "$devspace_bridge"
+  else
+    printf ' DevSpace:      Skipped (Node >= 22.19 not detected)\n'
+  fi
+  printf ' Dashboard:     https://nexus.bings.app\n'
+  printf ' MCP Endpoint:  https://nexus.bings.app/mcp\n'
+  printf '================================================================\n\n'
 }
+
 
 install_remote() {
   need_root
@@ -582,7 +611,7 @@ install_remote() {
   copy_or_fetch "agent-council/integrations/nexus-v3-chatgpt-remote-prompt.md" "$install_dir/assets/chatgpt-prompt.md"
 
   [ -d "$install_dir/.venv" ] || "$PYTHON" -m venv "$install_dir/.venv"
-  "$install_dir/.venv/bin/pip" install --disable-pip-version-check --no-cache-dir "mcp[cli]>=1.26,<2"
+  "$install_dir/.venv/bin/pip" install --disable-pip-version-check --no-cache-dir "mcp[cli]>=1.26,<2" uvicorn
 
   admin_key="${NEXUS_V3_ADMIN_KEY:-}"
   if [ -z "$admin_key" ] && [ -r "$v3_env" ]; then
@@ -590,6 +619,7 @@ install_remote() {
   fi
   [ -n "$admin_key" ] || fail "NEXUS_V3_ADMIN_KEY is unavailable"
   chatgpt_key="${NEXUS_CHATGPT_API_KEY:-$(openssl rand -hex 32)}"
+  bearer_token="${NEXUS_MCP_BEARER_TOKEN:-$(openssl rand -hex 32)}"
 
   umask 077
   cat > "$env_file" <<EOF
@@ -600,6 +630,7 @@ NEXUS_V3_CN_BROKER_URL=${NEXUS_V3_CN_BROKER_URL:-http://100.103.12.14:18120}
 NEXUS_V3_MCP_BIND=${NEXUS_V3_MCP_BIND:-127.0.0.1}
 NEXUS_V3_MCP_PORT=${NEXUS_V3_MCP_PORT:-18130}
 NEXUS_V3_ALLOW_DANGEROUS=${NEXUS_V3_ALLOW_DANGEROUS:-0}
+NEXUS_MCP_BEARER_TOKEN=$bearer_token
 NEXUS_CHATGPT_API_KEY=$chatgpt_key
 NEXUS_CHATGPT_BIND=${NEXUS_CHATGPT_BIND:-127.0.0.1}
 NEXUS_CHATGPT_PORT=${NEXUS_CHATGPT_PORT:-18131}
@@ -649,6 +680,9 @@ EOF
   systemctl is-active --quiet nexus-chatgpt-remote.service || fail "chatgpt remote service did not start"
   curl -fsS "http://${NEXUS_CHATGPT_BIND:-127.0.0.1}:${NEXUS_CHATGPT_PORT:-18131}/health" >/dev/null
   printf 'Nexus ChatGPT Remote installed. OpenAPI: http://%s:%s/openapi.json\n' "${NEXUS_CHATGPT_BIND:-127.0.0.1}" "${NEXUS_CHATGPT_PORT:-18131}"
+  printf '\nMCP Server endpoint:  https://nexus.bings.app/mcp\n'
+  printf 'MCP Bearer token:     %s\n' "$bearer_token"
+  printf '(Save the token in Bitwarden as "Nexus MCP Bearer Token")\n'
 }
 
 install_ops() {
@@ -680,13 +714,22 @@ cmd="${1:-}"
 case "$cmd" in
   registry) install_registry ;;
   broker) shift; install_broker "${1:-}" ;;
-  agent) shift; install_agent "${1:-}" ;;
-  user-agent) shift; install_user_agent "${1:-}" ;;
+  agent) shift; install_agent "${1:-auto}" ;;
+  user-agent) shift; install_user_agent "${1:-auto}" ;;
   openwrt-agent) shift; install_openwrt_agent "${1:-}" ;;
   remote) install_remote ;;
   ops) install_ops ;;
   sync-ssh-keys) sync_ssh_keys ;;
   sync-cluster-ssh) sync_cluster_ssh ;;
-  ""|-h|--help|help) usage ;;
+  -h|--help|help) usage ;;
+  "")
+    # Default one-command action: install agent automatically based on permissions
+    if [ "$(id -u)" -eq 0 ]; then
+      install_agent auto
+    else
+      install_user_agent auto
+    fi
+    ;;
   *) usage; fail "unknown installer command: $cmd" ;;
 esac
+

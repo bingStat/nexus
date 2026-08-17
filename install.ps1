@@ -1,11 +1,15 @@
 param(
-    [Parameter(Mandatory=$false)][string]$DeviceId = "victus",
+    [Parameter(Mandatory=$false)][string]$DeviceId = "auto",
     [string]$RegistryUrl = "https://nexus-global-api.bings.app",
     [string]$BrokerUrl = "https://nexus-eu-broker.bings.app",
     [string]$InstallDir = "$env:LOCALAPPDATA\NexusAgentV3",
-    [string[]]$AllowedRoots = @($env:USERPROFILE)
+    [string[]]$AllowedRoots = @($env:USERPROFILE),
+    [string]$AdminKey = $env:NEXUS_V3_ADMIN_KEY
 )
 $ErrorActionPreference = "Stop"
+if (-not $DeviceId -or $DeviceId -eq "auto") {
+    $DeviceId = $env:COMPUTERNAME.ToLowerInvariant() -replace '[^a-z0-9_.-]', ''
+}
 $SourceBase = if ($env:NEXUS_SOURCE_BASE) { $env:NEXUS_SOURCE_BASE.TrimEnd('/') } else { "https://raw.githubusercontent.com/bingStat/nexus/main" }
 
 function Get-Python {
@@ -132,9 +136,42 @@ New-ItemProperty -Path $RunKey -Name "NexusV3Agent" -PropertyType String -Value 
 & $RuntimePython -m py_compile "$InstallDir\nexus_v3\agent.py" "$InstallDir\nexus_v3\ledger.py"
 if ($LASTEXITCODE -ne 0) { throw "Nexus Python compile check failed" }
 Start-Process -WindowStyle Hidden -FilePath "$InstallDir\run-agent.cmd"
-Start-Sleep -Seconds 2
-Write-Host "Nexus v3 installed for $DeviceId at $InstallDir"
-Write-Host "Startup: HKCU Run\NexusV3Agent (no administrator privilege required)."
-Write-Host "Identity is Ed25519 and remains local; no shared fleet credential is stored on the device."
-if ($DevSpace) { Write-Host "DevSpace runtime enabled for: $($AllowedRoots -join ', ')" }
-else { Write-Host "DevSpace runtime skipped because Node >= 22.19 + npm were not available." }
+Start-Sleep -Seconds 3
+
+# Auto-approve device in cluster if admin key is available
+$approvalStatus = "pending (awaiting cluster approval)"
+if ($AdminKey) {
+    try {
+        $approveUri = "$($RegistryUrl.TrimEnd('/'))/v3/admin/devices/$DeviceId/approve"
+        $resp = Invoke-RestMethod -Uri $approveUri -Method Post -Headers @{ "X-Nexus-Admin-Key" = $AdminKey } -Body "{}" -ContentType "application/json" -TimeoutSec 10 -ErrorAction SilentlyContinue
+        if ($resp.status -eq "approved") { $approvalStatus = "Approved & Active" }
+    } catch {}
+}
+
+$keyId = "Unknown"
+if (Test-Path "$InstallDir\identity_ed25519.pub") {
+    $pubText = (Get-Content "$InstallDir\identity_ed25519.pub" -Raw).Trim()
+    $keyId = if ($pubText.Length -gt 24) { $pubText.Substring(0, 24) + "..." } else { $pubText }
+}
+
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "        Nexus v3 Agent Installed Successfully                  " -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host " Device ID:     $DeviceId"
+Write-Host " Platform:      $([System.Environment]::OSVersion.VersionString)"
+Write-Host " Install Dir:   $InstallDir"
+Write-Host " Startup:       HKCU Run\NexusV3Agent (user-level, no admin needed)"
+Write-Host " Registry:      $RegistryUrl"
+Write-Host " Broker:        $BrokerUrl"
+Write-Host " Cluster State: $approvalStatus" -ForegroundColor (if ($approvalStatus -match "Approved") { "Green" } else { "Yellow" })
+if ($DevSpace) {
+    Write-Host " DevSpace:      Enabled (Node: $($Node.Source))" -ForegroundColor Green
+    Write-Host " Allowed Roots: $($AllowedRoots -join ', ')"
+} else {
+    Write-Host " DevSpace:      Skipped (Node >= 22.19 not detected)" -ForegroundColor DarkGray
+}
+Write-Host " Dashboard:     https://nexus.bings.app"
+Write-Host " MCP Endpoint:  https://nexus.bings.app/mcp"
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""

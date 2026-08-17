@@ -14,18 +14,22 @@ def test_dashboard_uses_single_password_session_auth() -> None:
     assert "SameSite=Strict" in source
     assert "path === '/login'" in source
     assert "path === '/logout'" in source
-    assert "WWW-Authenticate" not in source
+    assert "Basic " not in source
     assert "AUTH_USER" not in source
     assert 'name="username"' not in source
     assert 'Bitwarden Password Manager' in source
     assert 'Bitwarden Secrets Manager' not in source
     assert "path === '/release.json'" in source
     assert "path === '/status.json'" in source
+    assert "path === '/authorize'" in source
+    assert "path === '/token'" in source
+    assert "path === '/mcp'" in source
     assert "live status source is not configured" in source
     assert "live status source unavailable" in source
     assert "'/install.sh': 'install.sh'" not in source
     assert "path.startsWith('/bootstrap/')" not in source
     assert "path.startsWith('/docs/')" not in source
+
 
 
 def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:
