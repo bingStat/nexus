@@ -90,9 +90,11 @@ Nexus 提供了原生 OAuth 2.0 自动握手能力，在 AI 对话框中无需�
 | **`open_workspace`** | `device_id`, `path`, `mode` (`checkout` \| `worktree`), `base_ref` | 在支持 DevSpace 的设备上打开项目目录或 Git Worktree 隔离工作区，返回 `workspace_id`。 |
 | **`read_workspace`** | `device_id`, `workspace_id`, `path`, `offset`, `limit` | 通过 DevSpace 运行时精确读取目标工作区内的文件内容。 |
 | **`apply_workspace_patch`** | `device_id`, `workspace_id`, `patch` | 在工作区内应用标准 Unified Diff 代码补丁（原子性修改）。 |
-| **`exec_workspace_command`** | `device_id`, `workspace_id`, `command`, `working_directory`, `tty` | 在指定工作区上下文内执行测试、构建或脚本任务。 |
+| **`exec_workspace_command`** | `device_id`, `workspace_id`, `command`, `working_directory`, `tty` | 在指定工作区上下文内执行测试、构建或长耗时脚本任务。 |
 | **`write_workspace_stdin`** | `device_id`, `workspace_id`, `session_id`, `chars` | 与工作区中运行的交互式进程进行 stdin 通信与轮询。 |
+| **`terminate_workspace_session`** | `device_id`, `workspace_id`, `session_id`, `signal` | 向工作区运行中的持久化进程发送中断信号（如 `SIGINT`/Ctrl+C、`SIGTERM`）。 |
 | **`get_job`** | `job_id`, `region` (`eu` \| `cn`) | 异步查询已提交的长耗时任务执行状态与结构化回执。 |
+
 
 ---
 
