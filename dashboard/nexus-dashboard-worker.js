@@ -734,20 +734,7 @@ export default {
                   },
                 },
                 {
-                  name: 'terminate_workspace_session',
-                  description: 'Terminate or send an interrupt signal (e.g. SIGINT/Ctrl+C, SIGTERM) to a running DevSpace process session.',
-                  inputSchema: {
-                    type: 'object',
-                    required: ['device_id', 'workspace_id', 'session_id'],
-                    properties: {
-                      device_id: { type: 'string' },
-                      workspace_id: { type: 'string' },
-                      session_id: { type: 'integer' },
-                      signal: { type: 'string', enum: ['SIGINT', 'SIGTERM', 'SIGKILL'], default: 'SIGTERM' },
-                    },
-                  },
-                },
-                {
+
                   name: 'get_job',
                   description: 'Query the execution result of an asynchronous Nexus job by ID.',
                   inputSchema: {
@@ -853,13 +840,6 @@ export default {
                 input: { workspaceId: args.workspace_id, sessionId: args.session_id, chars: args.chars || '' },
                 wait_seconds: 20,
               });
-            } else if (toolName === 'terminate_workspace_session') {
-              resultData = await apiFetch('/api/runtime', 'POST', {
-                device_id: args.device_id,
-                operation: 'workspace.terminate_session',
-                input: { workspaceId: args.workspace_id, sessionId: args.session_id, signal: args.signal || 'SIGTERM' },
-                wait_seconds: 20,
-              });
             } else if (toolName === 'get_job') {
               resultData = await apiFetch(`/api/jobs/${encodeURIComponent(args.region)}/${encodeURIComponent(args.job_id)}`);
             } else {
@@ -872,22 +852,16 @@ export default {
               });
             }
 
-            let rawText = JSON.stringify(resultData, null, 2);
-            const MAX_MCP_RETURN_CHARS = 24000;
-            if (rawText && rawText.length > MAX_MCP_RETURN_CHARS) {
-              const truncated = rawText.slice(0, MAX_MCP_RETURN_CHARS);
-              rawText = `${truncated}\n\n... [OUTPUT TRUNCATED: Result exceeded ${MAX_MCP_RETURN_CHARS} characters. Use offset/limit parameters to paginate remaining content.]`;
-            }
-
             return new Response(JSON.stringify({
               jsonrpc: '2.0',
               id,
               result: {
-                content: [{ type: 'text', text: rawText }],
+                content: [{ type: 'text', text: JSON.stringify(resultData, null, 2) }],
               },
             }), {
               headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
             });
+
           } catch (callErr) {
             return new Response(JSON.stringify({
               jsonrpc: '2.0',

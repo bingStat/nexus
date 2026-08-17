@@ -49,8 +49,8 @@ WORKSPACE_OPERATIONS = {
     "workspace.apply_patch",
     "workspace.exec",
     "workspace.write_stdin",
-    "workspace.terminate_session",
 }
+
 
 
 
@@ -411,19 +411,4 @@ def write_workspace_stdin(
         payload["yieldTimeMs"] = yield_time_ms
     return submit_operation(device_id, "workspace.write_stdin", payload, wait_seconds=wait_seconds)
 
-
-def terminate_workspace_session(
-    device_id: str,
-    workspace_id: str,
-    session_id: int,
-    signal: str = "SIGTERM",
-    wait_seconds: int = 20,
-) -> dict[str, Any]:
-    """Terminate or interrupt a running process session in an upstream DevSpace workspace."""
-    payload: dict[str, Any] = {
-        "workspaceId": workspace_id,
-        "sessionId": session_id,
-        "signal": signal,
-    }
-    return submit_operation(device_id, "workspace.terminate_session", payload, wait_seconds=wait_seconds)
 
