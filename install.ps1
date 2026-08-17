@@ -128,15 +128,22 @@ $LegacyDir = "$env:USERPROFILE\.nexus-agent"
 if (Test-Path $LegacyDir) { Remove-Item $LegacyDir -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-Item "$InstallDir\agent.log", "$InstallDir\ssh_ed25519.pub" -Force -ErrorAction SilentlyContinue
 
+$VbsRunner = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "cmd /c """ & "$InstallDir\run-agent.cmd" & """", 0, False
+"@
+$VbsRunner | Set-Content "$InstallDir\run-agent-silent.vbs" -Encoding ascii
+
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 New-Item -Path $RunKey -Force | Out-Null
-$RunCommand = 'cmd.exe /d /s /c ""{0}""' -f "$InstallDir\run-agent.cmd"
+$RunCommand = 'wscript.exe "{0}\run-agent-silent.vbs"' -f $InstallDir
 New-ItemProperty -Path $RunKey -Name "NexusV3Agent" -PropertyType String -Value $RunCommand -Force | Out-Null
 
 & $RuntimePython -m py_compile "$InstallDir\nexus_v3\agent.py" "$InstallDir\nexus_v3\ledger.py"
 if ($LASTEXITCODE -ne 0) { throw "Nexus Python compile check failed" }
-Start-Process -WindowStyle Hidden -FilePath "$InstallDir\run-agent.cmd"
+Start-Process "wscript.exe" -ArgumentList "`"$InstallDir\run-agent-silent.vbs`""
 Start-Sleep -Seconds 3
+
 
 # Auto-approve device in cluster if admin key is available
 $approvalStatus = "pending (awaiting cluster approval)"

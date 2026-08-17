@@ -18,8 +18,67 @@ from .ledger import ExecutionLedger
 VERSION = "3.1.0"
 
 
+class SingleInstanceLock:
+    """Cross-platform non-blocking file lock to prevent duplicate Agent processes."""
+
+    def __init__(self, lock_file: Path):
+        self.lock_file = lock_file
+        self._fd: int | None = None
+        self._locked = False
+
+    def acquire(self) -> bool:
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                flags = os.O_RDWR | os.O_CREAT
+                self._fd = os.open(str(self.lock_file), flags)
+                msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                self._fd = os.open(str(self.lock_file), os.O_RDWR | os.O_CREAT, 0o644)
+                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            os.ftruncate(self._fd, 0)
+            os.lseek(self._fd, 0, os.SEEK_SET)
+            os.write(self._fd, f"{os.getpid()}\n".encode("utf-8"))
+            self._locked = True
+            return True
+        except (OSError, IOError):
+            if self._fd is not None:
+                try:
+                    os.close(self._fd)
+                except Exception:
+                    pass
+                self._fd = None
+            return False
+
+    def release(self) -> None:
+        if not self._locked or self._fd is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(self._fd, 0, os.SEEK_SET)
+                msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+            os.close(self._fd)
+        except Exception:
+            pass
+        finally:
+            self._fd = None
+            self._locked = False
+
+
 def config_path() -> Path:
     return Path(os.getenv("NEXUS_V3_CONFIG", "/etc/nexus-agent/v3.json"))
+
 
 
 def load_config() -> dict:
@@ -88,51 +147,65 @@ def registration_with_capabilities(
 
 
 def main() -> None:
-    config = load_config()
-    device_id = str(config["device_id"]).strip().lower()
-    registry = str(config["registry_url"]).rstrip("/")
-    broker = str(config["broker_url"]).rstrip("/")
-    identity = Identity(
-        Path(config.get("identity_key", "/etc/nexus-agent/identity_ed25519")),
-        Path(config.get("identity_public_key", "/etc/nexus-agent/identity_ed25519.pub")),
-    )
-    agent_id = f"{device_id}:{socket.gethostname()}:{os.getpid()}"
-    devspace, capabilities = load_devspace_runtime(config)
-    ledger_path = Path(config.get("execution_ledger") or (config_path().parent / "execution-ledger.db"))
-    ledger = ExecutionLedger(ledger_path)
+    cfg_path = config_path()
+    lock_file = cfg_path.parent / ".nexus-agent.lock"
+    lock = SingleInstanceLock(lock_file)
+    if not lock.acquire():
+        print(
+            json_dumps({
+                "event": "agent.already_running",
+                "message": "Another Nexus Agent instance is already running on this machine.",
+            }),
+            flush=True,
+        )
+        return
 
-    ssh_public_key = ""
-    ssh_public_key_path = config.get("ssh_public_key")
-    if ssh_public_key_path:
-        path = Path(str(ssh_public_key_path))
-        if path.exists():
-            ssh_public_key = path.read_text(encoding="utf-8").strip()
-    registration = registration_with_capabilities(
-        identity,
-        device_id,
-        socket.gethostname(),
-        platform.platform(),
-        ssh_public_key,
-        capabilities,
-    )
-    response = requests.post(f"{registry}/v3/devices/register", json=registration, timeout=20)
-    registration_payload = response.json() if response.text else {}
-    require_success(response.status_code, registration_payload, "device registration", {200, 201, 202})
-    print(
-        json_dumps(
-            {
-                "event": "agent.registered",
-                "device_id": device_id,
-                "status": registration_payload.get("status", "unknown"),
-                "key_id": identity.key_id,
-                "runtime": capabilities.get("runtime"),
-                "devspace_version": capabilities.get("devspace_version"),
-            }
-        ),
-        flush=True,
-    )
-
+    devspace = None
     try:
+        config = load_config()
+        device_id = str(config["device_id"]).strip().lower()
+        registry = str(config["registry_url"]).rstrip("/")
+        broker = str(config["broker_url"]).rstrip("/")
+        identity = Identity(
+            Path(config.get("identity_key", "/etc/nexus-agent/identity_ed25519")),
+            Path(config.get("identity_public_key", "/etc/nexus-agent/identity_ed25519.pub")),
+        )
+        agent_id = f"{device_id}:{socket.gethostname()}:{os.getpid()}"
+        devspace, capabilities = load_devspace_runtime(config)
+        ledger_path = Path(config.get("execution_ledger") or (cfg_path.parent / "execution-ledger.db"))
+        ledger = ExecutionLedger(ledger_path)
+
+        ssh_public_key = ""
+        ssh_public_key_path = config.get("ssh_public_key")
+        if ssh_public_key_path:
+            path = Path(str(ssh_public_key_path))
+            if path.exists():
+                ssh_public_key = path.read_text(encoding="utf-8").strip()
+        registration = registration_with_capabilities(
+            identity,
+            device_id,
+            socket.gethostname(),
+            platform.platform(),
+            ssh_public_key,
+            capabilities,
+        )
+        response = requests.post(f"{registry}/v3/devices/register", json=registration, timeout=20)
+        registration_payload = response.json() if response.text else {}
+        require_success(response.status_code, registration_payload, "device registration", {200, 201, 202})
+        print(
+            json_dumps(
+                {
+                    "event": "agent.registered",
+                    "device_id": device_id,
+                    "status": registration_payload.get("status", "unknown"),
+                    "key_id": identity.key_id,
+                    "runtime": capabilities.get("runtime"),
+                    "devspace_version": capabilities.get("devspace_version"),
+                }
+            ),
+            flush=True,
+        )
+
         while True:
             query = urlencode({"device_id": device_id, "agent_id": agent_id, "wait": int(config.get("wait_seconds", 20))})
             path = f"/v3/jobs/claim?{query}"
@@ -152,6 +225,8 @@ def main() -> None:
     finally:
         if devspace:
             devspace.close()
+        lock.release()
+
 
 
 def execute_job(job: dict, devspace: DevSpaceRuntime | None) -> tuple[str, int, str, dict]:

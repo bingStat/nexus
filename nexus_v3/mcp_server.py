@@ -174,9 +174,28 @@ def write_workspace_stdin(
 
 
 @mcp.tool()
+def terminate_workspace_session(
+    device_id: str,
+    workspace_id: str,
+    session_id: int,
+    signal: str = "SIGTERM",
+    wait_seconds: int = 20,
+) -> dict[str, Any]:
+    """Terminate or send interrupt signal (e.g. SIGINT/Ctrl+C, SIGTERM) to a running workspace process session."""
+    return remote_control.terminate_workspace_session(
+        device_id,
+        workspace_id,
+        session_id,
+        signal,
+        wait_seconds,
+    )
+
+
+@mcp.tool()
 def get_job(job_id: str, region: str) -> dict[str, Any]:
     """Get a Nexus job by ID from the specified eu or cn broker."""
     return remote_control.get_job(job_id, region)
+
 
 
 if __name__ == "__main__":

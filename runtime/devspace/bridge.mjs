@@ -148,6 +148,25 @@ async function dispatch(request) {
     });
   }
 
+  if (operation === "workspace.terminate_session" || operation === "workspace.kill_process") {
+    const sessionId = Number(input.sessionId);
+    const signal = String(input.signal || "SIGTERM").toUpperCase();
+    try {
+      if (typeof processes.kill === "function") {
+        return await processes.kill({ workspaceId, sessionId, signal });
+      }
+      if (typeof processes.terminate === "function") {
+        return await processes.terminate({ workspaceId, sessionId });
+      }
+    } catch {}
+    return await processes.write({
+      workspaceId,
+      sessionId,
+      chars: "\x03",
+    });
+  }
+
+
   throw new Error(`unsupported DevSpace runtime operation: ${operation}`);
 }
 
