@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus v3 Cluster Dashboard</title>
     <meta name="description" content="Nexus v3 设备控制面板 — Ed25519 身份、Oracle Registry、区域 Broker 与 Agent 状态。">
+    <script>
+        (() => {
+            try {
+                const saved = localStorage.getItem('nexus:theme');
+                const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.dataset.theme = saved || (systemDark ? 'dark' : 'light');
+            } catch (_) {
+                document.documentElement.dataset.theme = 'light';
+            }
+        })();
+    </script>
     <style>
         :root {
             --font-sf-display: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -965,6 +976,97 @@
             #topo-panel, .panel { border-radius: 18px; }
             .sidebar { grid-template-columns: 1fr; gap: 10px; }
         }
+
+
+        /* Apple-inspired night mode. Light remains the default; the choice is persisted locally. */
+        .theme-toggle {
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            padding: 0;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(0,0,0,.045);
+            color: #1d1d1f;
+            font-size: 1rem;
+            line-height: 1;
+            box-shadow: none;
+            transition: background .18s ease, color .18s ease, transform .18s ease;
+        }
+        .theme-toggle:hover { background: rgba(0,0,0,.085); transform: none; opacity: 1; }
+        .theme-toggle:focus-visible { outline: 3px solid rgba(0,102,204,.22); outline-offset: 2px; }
+        .theme-toggle-icon { transform: translateY(-.5px); }
+
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #000000;
+            --surface: #1c1c1e;
+            --surface2: #2c2c2e;
+            --border: rgba(255,255,255,.10);
+            --border-bright: rgba(41,151,255,.42);
+            --text: #f5f5f7;
+            --muted: #a1a1a6;
+            --blue: #2997ff;
+            --green: #30d158;
+            --orange: #ff9f0a;
+            --red: #ff453a;
+            --purple: #bf5af2;
+            --cyan: #2997ff;
+            --amber: #ff9f0a;
+            --cf-orange: #ff9f0a;
+        }
+        :root[data-theme="dark"] body { background: #000 !important; color: var(--text); }
+        :root[data-theme="dark"] header {
+            background: rgba(22,22,23,.82) !important;
+            border-bottom-color: rgba(255,255,255,.08) !important;
+        }
+        :root[data-theme="dark"] .theme-toggle { background: rgba(255,255,255,.09); color: #f5f5f7; }
+        :root[data-theme="dark"] .theme-toggle:hover { background: rgba(255,255,255,.15); }
+        :root[data-theme="dark"] .stat-pill,
+        :root[data-theme="dark"] #topo-panel,
+        :root[data-theme="dark"] .panel {
+            background: #1c1c1e !important;
+            border-color: rgba(255,255,255,.10) !important;
+            box-shadow: 0 8px 30px rgba(0,0,0,.28);
+        }
+        :root[data-theme="dark"] #topo-badge { background: rgba(41,151,255,.16); color: #64b5ff; }
+        :root[data-theme="dark"] .topo-action-btn { background: #2c2c2e; color: #64b5ff; }
+        :root[data-theme="dark"] .topo-action-btn:hover { background: #3a3a3c; }
+        :root[data-theme="dark"] .topo-hint {
+            background: rgba(44,44,46,.84);
+            border-color: rgba(255,255,255,.10);
+            color: var(--muted);
+        }
+        :root[data-theme="dark"] .topo-node-inner { background: #1c1c1e !important; box-shadow: 0 2px 12px rgba(0,0,0,.30) !important; }
+        :root[data-theme="dark"] .topo-label { color: #d1d1d6; }
+        :root[data-theme="dark"] .hub-label,
+        :root[data-theme="dark"] .topo-hub-label {
+            background: rgba(44,44,46,.92) !important;
+            border-color: rgba(255,255,255,.10) !important;
+            color: #d1d1d6 !important;
+        }
+        :root[data-theme="dark"] .panel-header { background: transparent !important; border-bottom-color: rgba(255,255,255,.10) !important; }
+        :root[data-theme="dark"] .panel-badge { background: #2c2c2e; color: var(--muted); }
+        :root[data-theme="dark"] .device-item:hover { background: #2c2c2e !important; }
+        :root[data-theme="dark"] .device-item.selected { background: rgba(41,151,255,.14) !important; border-color: rgba(41,151,255,.18) !important; }
+        :root[data-theme="dark"] .device-status-ring { background: #2c2c2e; }
+        :root[data-theme="dark"] .role-chip,
+        :root[data-theme="dark"] .runtime-chip,
+        :root[data-theme="dark"] .runtime-chip.shell,
+        :root[data-theme="dark"] .role-chip.more { background: #2c2c2e; color: #d1d1d6; border-color: transparent; }
+        :root[data-theme="dark"] .role-chip.primary,
+        :root[data-theme="dark"] .runtime-chip { background: rgba(41,151,255,.14); color: #64b5ff; }
+        :root[data-theme="dark"] .service-detail-icon,
+        :root[data-theme="dark"] .service-card,
+        :root[data-theme="dark"] .task-entry,
+        :root[data-theme="dark"] .console-output { background: #2c2c2e; border-color: transparent; color: #f5f5f7; }
+        :root[data-theme="dark"] .task-output { background: #1c1c1e; border-color: rgba(255,255,255,.10); }
+        :root[data-theme="dark"] select,
+        :root[data-theme="dark"] input { background: #2c2c2e; color: #f5f5f7; border-color: rgba(255,255,255,.16); }
+        :root[data-theme="dark"] .pill-unknown { background: #2c2c2e; }
 </style>
 </head>
 <body>
@@ -978,6 +1080,7 @@
         </div>
     </div>
     <div class="header-right">
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换夜间模式" title="切换夜间模式"><span class="theme-toggle-icon" id="theme-toggle-icon" aria-hidden="true">☾</span></button>
         <div class="live-badge" id="live-badge"><div class="live-dot"></div><span id="live-label">LIVE</span></div>
         <div id="last-updated">--</div>
     </div>
@@ -1053,6 +1156,25 @@
 <script>
 // ─── CONFIG ───
 // Static public dashboard snapshot. Do not expose API keys or private tokens here.
+const THEME_STORAGE_KEY = 'nexus:theme';
+function syncThemeButton() {
+    const isDark = document.documentElement.dataset.theme === 'dark';
+    const icon = document.getElementById('theme-toggle-icon');
+    const button = document.getElementById('theme-toggle');
+    if (icon) icon.textContent = isDark ? '☀' : '☾';
+    if (button) {
+        button.setAttribute('aria-label', isDark ? '切换日间模式' : '切换夜间模式');
+        button.setAttribute('title', isDark ? '切换日间模式' : '切换夜间模式');
+    }
+}
+function toggleTheme() {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch (_) {}
+    syncThemeButton();
+}
+document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
+syncThemeButton();
 const POLL_INTERVAL = 30000;
 let devicesData = [];
 let activeFlows = new Set(['oracle', 'thinkcenter', 'n1']);
@@ -1066,14 +1188,14 @@ let dragState = null;
 const STATUS_ICONS = { completed: '✅', running: '🔄', pending: '⏳', failed: '❌' };
 
 const DEVICE_META = {
-    oracle:      { icon: '\u2601\ufe0f', os: 'Ubuntu 22.04', roles: ['v3 Registry', 'v3 Broker (EU)', 'v3 MCP', 'Remote API', 'Ops', 'v3 Agent'], location: 'Oracle Cloud / Tailscale' },
-    thinkcenter: { icon: '\uD83D\uDDA5\ufe0f', os: 'Ubuntu 24.04', roles: ['v3 Broker (CN)', 'v3 Agent', 'Public Guard'], location: 'Beijing, China' },
-    n1:          { icon: '\uD83D\uDCE1', os: 'iStoreOS / OpenWrt', roles: ['v3 Agent'], runtime: 'Shell', location: 'Beijing LAN' },
-    vsc:         { icon: '\uD83D\uDD2C', os: 'RHEL / HPC', roles: ['v3 Agent'], runtime: 'Shell', location: 'KU Leuven VSC' },
-    victus:      { icon: '\uD83E\uDE9F', os: 'Windows 11', roles: ['v3 Agent'], location: 'Leuven' },
-    'victus-wsl':{ icon: '\uD83D\uDC27', os: 'Ubuntu / WSL2', roles: ['v3 Agent'], location: 'Victus WSL2' },
-    elitebook:   { icon: '\uD83D\uDCBB', os: 'Windows', roles: ['v3 Agent'], location: 'Leuven' },
-    ax3600:      { icon: '\uD83D\uDCF6', os: 'OpenWrt', roles: ['v3 Agent'], runtime: 'Shell', location: 'Beijing LAN' },
+    oracle:      { icon: '\u2601\ufe0f', os: 'Ubuntu 22.04', roles: ['v3 Registry', 'v3 Broker (EU)', 'v3 MCP', 'Remote API', 'Ops', 'v3 Agent'], location: 'Amsterdam, Netherlands · IP 141.148.241.88' },
+    thinkcenter: { icon: '\uD83D\uDDA5\ufe0f', os: 'Ubuntu 24.04', roles: ['v3 Broker (CN)', 'v3 Agent', 'Public Guard'], location: 'Shanghai, China · IP 120.243.162.170' },
+    n1:          { icon: '\uD83D\uDCE1', os: 'iStoreOS / OpenWrt', roles: ['v3 Agent'], runtime: 'Shell', location: 'Shanghai, China · IP 120.243.162.170' },
+    vsc:         { icon: '\uD83D\uDD2C', os: 'RHEL / HPC', roles: ['v3 Agent'], runtime: 'Shell', location: 'Leuven, Belgium · IP 134.58.253.57' },
+    victus:      { icon: '\uD83E\uDE9F', os: 'Windows 11', roles: ['v3 Agent'], location: 'Brussels, Belgium · IP 94.104.207.142' },
+    'victus-wsl':{ icon: '\uD83D\uDC27', os: 'Ubuntu / WSL2', roles: ['v3 Agent'], location: 'Brussels, Belgium · IP 94.104.207.142' },
+    elitebook:   { icon: '\uD83D\uDCBB', os: 'Windows', roles: ['v3 Agent'], location: 'IP location unavailable' },
+    ax3600:      { icon: '\uD83D\uDCF6', os: 'OpenWrt', roles: ['v3 Agent'], runtime: 'Shell', location: 'IP location unavailable' },
 };
 const DEVICE_SORT_ORDER = ['oracle', 'thinkcenter', 'n1', 'victus', 'victus-wsl', 'vsc', 'elitebook', 'ax3600'];
 const STATIC_UPDATED_AT = '2026-08-11 19:05 Europe/Brussels';
@@ -1214,7 +1336,7 @@ const TOPO_HUBS = {
 // Device nodes with services listed
 const TOPO_DEVICES = {
     oracle: {
-        hub: 'global', x: 94, y: 22, icon: '\u2601\ufe0f', label: 'Oracle', geo: 'Oracle Cloud / Tailscale',
+        hub: 'global', x: 94, y: 22, icon: '\u2601\ufe0f', label: 'Oracle', geo: 'Amsterdam, Netherlands · 141.148.241.88',
         services: [
             { name: 'v3 Registry', cls: 'svc-oracle', url: '' },
             { name: 'v3 Broker (EU)', cls: 'svc-oracle', url: '' },
@@ -1225,17 +1347,17 @@ const TOPO_DEVICES = {
         ]
     },
     thinkcenter: {
-        hub: 'china', x: 10, y: 30, icon: '\uD83D\uDDA5\ufe0f', label: 'ThinkCenter', geo: 'Beijing, China',
+        hub: 'china', x: 10, y: 30, icon: '\uD83D\uDDA5\ufe0f', label: 'ThinkCenter', geo: 'Shanghai, China · 120.243.162.170',
         services: [
             { name: 'v3 Broker (CN)', cls: 'svc-thinkcenter', url: '' },
             { name: 'v3 Agent', cls: 'svc-thinkcenter', url: '' },
             { name: 'Public Guard', cls: 'svc-thinkcenter', url: '' },
         ]
     },
-    n1: { hub: 'china', x: 10, y: 72, icon: '\uD83D\uDCE1', label: 'N1', geo: 'Beijing LAN', services: [{ name: 'v3 Agent', cls: 'svc-n1', url: '' }] },
-    victus: { hub: 'global', x: 62, y: 24, icon: '\uD83E\uDE9F', label: 'Victus', geo: 'Windows 11 / Leuven', services: [{ name: 'v3 Agent', cls: 'svc-victus', url: '' }] },
-    'victus-wsl': { hub: 'global', x: 72, y: 74, icon: '\uD83D\uDC27', label: 'Victus WSL', geo: 'Ubuntu / WSL2', services: [{ name: 'v3 Agent', cls: 'svc-victus', url: '' }] },
-    vsc: { hub: 'global', x: 94, y: 74, icon: '\uD83D\uDD2C', label: 'VSC', geo: 'KU Leuven HPC', services: [{ name: 'v3 Agent', cls: 'svc-vsc', url: '' }] },
+    n1: { hub: 'china', x: 10, y: 72, icon: '\uD83D\uDCE1', label: 'N1', geo: 'Shanghai, China · 120.243.162.170', services: [{ name: 'v3 Agent', cls: 'svc-n1', url: '' }] },
+    victus: { hub: 'global', x: 62, y: 24, icon: '\uD83E\uDE9F', label: 'Victus', geo: 'Brussels, Belgium · 94.104.207.142', services: [{ name: 'v3 Agent', cls: 'svc-victus', url: '' }] },
+    'victus-wsl': { hub: 'global', x: 72, y: 74, icon: '\uD83D\uDC27', label: 'Victus WSL', geo: 'Brussels, Belgium · 94.104.207.142', services: [{ name: 'v3 Agent', cls: 'svc-victus', url: '' }] },
+    vsc: { hub: 'global', x: 94, y: 74, icon: '\uD83D\uDD2C', label: 'VSC', geo: 'Leuven, Belgium · 134.58.253.57', services: [{ name: 'v3 Agent', cls: 'svc-vsc', url: '' }] },
 };
 
 // Cloudflare services (attached to the CF hub node)
@@ -1821,9 +1943,9 @@ document.getElementById('cmd-input')?.addEventListener('keydown', e => { if (e.k
 
 // ─── POLL LOOP ───
 const geoCache = {
-    '100.116.89.65': 'Oracle / Tailscale',
-    '100.103.12.14': 'ThinkCenter / Tailscale',
-    '100.90.67.12': 'N1 / Tailscale',
+    '100.116.89.65': 'Amsterdam, Netherlands · public 141.148.241.88 · Tailscale 100.116.89.65',
+    '100.103.12.14': 'Shanghai, China · public 120.243.162.170 · Tailscale 100.103.12.14',
+    '100.90.67.12': 'Shanghai, China · public 120.243.162.170 · Tailscale 100.90.67.12',
 };
 async function resolveGeo(ip) { return geoCache[ip] || null; }
 
