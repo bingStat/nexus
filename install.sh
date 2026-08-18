@@ -606,7 +606,7 @@ install_remote() {
   env_file="${NEXUS_CHATGPT_ENV_FILE:-/etc/nexus-chatgpt-remote.env}"
   v3_env="${NEXUS_V3_ENV_FILE:-/etc/nexus-v3.env}"
   mkdir -p "$install_dir/assets"
-  install_python_package "$install_dir" __init__.py common.py status.py remote_control.py mcp_server.py chatgpt_api.py
+  install_python_package "$install_dir" __init__.py common.py status.py remote_control.py mcp_contracts.py mcp_server.py chatgpt_api.py
   copy_or_fetch "agent-council/integrations/nexus-v3-remote-control-openapi.json" "$install_dir/assets/openapi.template.json"
   copy_or_fetch "agent-council/integrations/nexus-v3-chatgpt-remote-prompt.md" "$install_dir/assets/chatgpt-prompt.md"
 

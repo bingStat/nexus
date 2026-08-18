@@ -34,7 +34,10 @@ function Fail([string]$msg) { Write-Host "[nexus-mcp] ERROR: $msg" -ForegroundCo
 function Read-Secret([string]$prompt, [string]$envName) {
     $val = [System.Environment]::GetEnvironmentVariable($envName, "User")
     if (-not $val) { $val = [System.Environment]::GetEnvironmentVariable($envName, "Machine") }
-    if (-not $val) { $val = (Get-Item -Path "Env:$envName" -ErrorAction SilentlyContinue)?.Value }
+    if (-not $val) {
+        $envItem = Get-Item -Path "Env:$envName" -ErrorAction SilentlyContinue
+        if ($null -ne $envItem) { $val = $envItem.Value }
+    }
     if ($val) { return $val }
     $sec = Read-Host -AsSecureString $prompt
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
@@ -73,7 +76,15 @@ if (-not $sourceDir -or -not (Test-Path "$sourceDir\nexus_v3")) {
     if (Test-Path "$candidate\nexus_v3") { $sourceDir = $candidate }
 }
 
-$mcpFiles = @("__init__.py","common.py","status.py","remote_control.py","mcp_server.py","chatgpt_api.py")
+$mcpFiles = @(
+    "__init__.py",
+    "common.py",
+    "status.py",
+    "remote_control.py",
+    "mcp_contracts.py",
+    "mcp_server.py",
+    "chatgpt_api.py"
+)
 
 if ($sourceDir -and (Test-Path "$sourceDir\nexus_v3")) {
     Info "Copying nexus_v3 from $sourceDir..."
@@ -103,7 +114,9 @@ if ($LASTEXITCODE -ne 0) { Fail "pip install failed" }
 OK "gateway venv ready"
 
 # ---------- compile check ----------------------------------------------------
-& $venvPy -m py_compile (Join-Path $InstallDir "nexus_v3\mcp_server.py")
+& $venvPy -m py_compile `
+    (Join-Path $InstallDir "nexus_v3\mcp_contracts.py") `
+    (Join-Path $InstallDir "nexus_v3\mcp_server.py")
 if ($LASTEXITCODE -ne 0) { Fail "mcp_server.py compile check failed" }
 
 # ---------- env file ---------------------------------------------------------
@@ -120,12 +133,29 @@ Set-Acl $envFile $acl
 OK "env file written (owner-only ACL)"
 
 # ---------- run-mcp.cmd ------------------------------------------------------
-$runCmdContent = "@echo off`r`nsetlocal`r`nfor /f ""usebackq tokens=1,* delims=="" %%A in (""$envFile"") do (`r`n    if not ""%%A""=="""" set ""%%A=%%B""`r`n)`r`ncd /d ""$InstallDir""`r`n:restart`r`n""$venvPy"" -m nexus_v3.mcp_server >> ""$InstallDir\logs\mcp.log"" 2>&1`r`necho [%DATE% %TIME%] nexus_v3.mcp_server exited; restarting in 5s >> ""$InstallDir\logs\mcp.log""`r`ntimeout /t 5 /nobreak >nul`r`ngoto restart`r`n"
+$runCmdContent = @"
+@echo off
+setlocal
+for /f "usebackq tokens=1,* delims==" %%A in ("$envFile") do (
+    if not "%%A"=="" set "%%A=%%B"
+)
+cd /d "$InstallDir"
+:restart
+"$venvPy" -m nexus_v3.mcp_server >> "$InstallDir\logs\mcp.log" 2>&1
+echo [%DATE% %TIME%] nexus_v3.mcp_server exited; restarting in 5s >> "$InstallDir\logs\mcp.log"
+timeout /t 5 /nobreak >nul
+goto restart
+"@
 [System.IO.File]::WriteAllText((Join-Path $InstallDir "run-mcp.cmd"), $runCmdContent, $utf8NoBom)
 
 # ---------- run-mcp-silent.vbs -----------------------------------------------
-$vbsContent = "Set WshShell = CreateObject(""WScript.Shell"")`r`nWshShell.Run ""cmd.exe /c """"" + (Join-Path $InstallDir "run-mcp.cmd") + """""" "","" 0, False`r`n"
-[System.IO.File]::WriteAllText((Join-Path $InstallDir "run-mcp-silent.vbs"), $vbsContent, $utf8NoBom)
+$runCmdPath = Join-Path $InstallDir "run-mcp.cmd"
+$vbsPath = Join-Path $InstallDir "run-mcp-silent.vbs"
+$vbsContent = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "cmd.exe /c ""$runCmdPath""", 0, False
+"@
+[System.IO.File]::WriteAllText($vbsPath, $vbsContent, $utf8NoBom)
 OK "Launcher scripts written"
 
 # ---------- stop any running instance ----------------------------------------
@@ -138,12 +168,12 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
 # ---------- register in HKCU Run ---------------------------------------------
 $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 New-ItemProperty -Path $runKey -Name "NexusMcpGateway" -PropertyType String `
-    -Value "wscript.exe ""$(Join-Path $InstallDir 'run-mcp-silent.vbs')""" -Force | Out-Null
+    -Value ('wscript.exe "{0}"' -f $vbsPath) -Force | Out-Null
 OK "Registered: HKCU Run\NexusMcpGateway"
 
 # ---------- launch now -------------------------------------------------------
 Start-Process -WindowStyle Hidden -FilePath "wscript.exe" `
-    -ArgumentList """$(Join-Path $InstallDir 'run-mcp-silent.vbs')"""
+    -ArgumentList ('"{0}"' -f $vbsPath)
 Start-Sleep -Seconds 4
 
 # ---------- verify -----------------------------------------------------------
@@ -152,7 +182,10 @@ try {
         -Headers @{ Authorization = "Bearer $bearerToken" } -TimeoutSec 6 -ErrorAction Stop
     OK "MCP Server is responding (HTTP $($resp.StatusCode))"
 } catch {
-    $code = $_.Exception.Response?.StatusCode?.value__
+    $code = $null
+    if ($null -ne $_.Exception.Response) {
+        $code = [int]$_.Exception.Response.StatusCode
+    }
     if ($code -in 200,401,405) {
         OK "MCP Server is listening (HTTP $code)"
     } else {
