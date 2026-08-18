@@ -5,8 +5,37 @@ import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ToolAnnotations
 
 from . import remote_control
+from .mcp_contracts import (
+    BaseRef,
+    BatchJobs,
+    BatchOutput,
+    BrokerRegion,
+    Command,
+    DeviceId,
+    DeviceListOutput,
+    DeviceOutput,
+    DeviceStatus,
+    FleetStatusOutput,
+    JobId,
+    JobOutput,
+    MaxOutputTokens,
+    OptionalPath,
+    Patch,
+    Path,
+    ReadLimit,
+    ReadOffset,
+    SessionId,
+    StdinChars,
+    TimeoutMs,
+    WaitSeconds,
+    WorkspaceId,
+    WorkspaceMode,
+    YieldTimeMs,
+)
 
 VERSION = "3.1.0"
 
@@ -22,6 +51,46 @@ mcp = FastMCP(
     port=int(os.getenv("NEXUS_V3_MCP_PORT", "18130")),
     stateless_http=True,
     json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "127.0.0.1:*",
+            "localhost:*",
+            "[::1]:*",
+            "nexus.bings.app",
+            "nexus.bings.app:*",
+            "nexus-api.bings.app",
+            "nexus-api.bings.app:*",
+        ],
+        allowed_origins=[
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            "http://[::1]:*",
+            "https://nexus.bings.app",
+            "https://nexus.bings.app:*",
+            "https://nexus-api.bings.app",
+            "https://nexus-api.bings.app:*",
+        ],
+    ),
+)
+
+READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+NON_DESTRUCTIVE_WRITE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+DESTRUCTIVE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=False,
+    openWorldHint=True,
 )
 
 
@@ -63,83 +132,88 @@ def _make_auth_middleware(app: Any, token: str) -> Any:
     return middleware
 
 
-@mcp.tool()
-def list_devices(status: str = "approved") -> dict[str, Any]:
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+def list_devices(status: DeviceStatus = "approved") -> DeviceListOutput:
     """List Nexus devices, including their runtime capabilities."""
     return remote_control.list_devices(status)
 
 
-@mcp.tool()
-def get_device(device_id: str) -> dict[str, Any]:
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+def get_device(device_id: DeviceId) -> DeviceOutput:
     """Return one Nexus device identity and its runtime capabilities."""
     return remote_control.get_device(device_id)
 
 
-@mcp.tool()
-def fleet_status() -> dict[str, Any]:
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+def fleet_status() -> FleetStatusOutput:
     """Return current runtime status for approved devices and both Regional Brokers."""
     return remote_control.fleet_status()
 
 
-@mcp.tool()
-def execute_batch(jobs: list[dict[str, Any]], wait_seconds: int = 20) -> dict[str, Any]:
+@mcp.tool(annotations=DESTRUCTIVE, structured_output=True)
+def execute_batch(jobs: BatchJobs, wait_seconds: WaitSeconds = 20) -> BatchOutput:
     """Execute up to 16 shell jobs concurrently; every job must name its target device."""
-    return remote_control.execute_batch(jobs, wait_seconds)
+    return remote_control.execute_batch([job.model_dump(exclude_none=True) for job in jobs], wait_seconds)
 
 
-@mcp.tool()
-def execute_command(device_id: str, command: str, timeout_ms: int = 30000, wait_seconds: int = 20) -> dict[str, Any]:
+@mcp.tool(annotations=DESTRUCTIVE, structured_output=True)
+def execute_command(
+    device_id: DeviceId,
+    command: Command,
+    timeout_ms: TimeoutMs = 30000,
+    wait_seconds: WaitSeconds = 20,
+) -> JobOutput:
     """Execute a shell command on one explicitly named Nexus device."""
     return remote_control.execute_command(device_id, command, timeout_ms, wait_seconds)
 
 
-@mcp.tool()
+@mcp.tool(annotations=NON_DESTRUCTIVE_WRITE, structured_output=True)
 def open_workspace(
-    device_id: str,
-    path: str,
-    mode: str = "checkout",
-    base_ref: str = "",
-    wait_seconds: int = 20,
-) -> dict[str, Any]:
+    device_id: DeviceId,
+    path: Path,
+    mode: WorkspaceMode = "checkout",
+    base_ref: BaseRef = "",
+    wait_seconds: WaitSeconds = 20,
+) -> JobOutput:
     """Open an upstream DevSpace checkout or managed worktree on one named device."""
     return remote_control.open_workspace(device_id, path, mode, base_ref or None, wait_seconds)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
 def read_workspace(
-    device_id: str,
-    workspace_id: str,
-    path: str,
-    offset: int | None = None,
-    limit: int | None = None,
-    wait_seconds: int = 20,
-) -> dict[str, Any]:
+    device_id: DeviceId,
+    workspace_id: WorkspaceId,
+    path: Path,
+    offset: ReadOffset | None = None,
+    limit: ReadLimit | None = None,
+    wait_seconds: WaitSeconds = 20,
+) -> JobOutput:
     """Read a file using the upstream DevSpace workspace runtime."""
     return remote_control.read_workspace(device_id, workspace_id, path, offset, limit, wait_seconds)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE, structured_output=True)
 def apply_workspace_patch(
-    device_id: str,
-    workspace_id: str,
-    patch: str,
-    wait_seconds: int = 20,
-) -> dict[str, Any]:
+    device_id: DeviceId,
+    workspace_id: WorkspaceId,
+    patch: Patch,
+    wait_seconds: WaitSeconds = 20,
+) -> JobOutput:
     """Apply a Codex-style patch through upstream DevSpace on the named device."""
     return remote_control.apply_workspace_patch(device_id, workspace_id, patch, wait_seconds)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE, structured_output=True)
 def exec_workspace_command(
-    device_id: str,
-    workspace_id: str,
-    command: str,
-    working_directory: str = "",
+    device_id: DeviceId,
+    workspace_id: WorkspaceId,
+    command: Command,
+    working_directory: OptionalPath = "",
     tty: bool = False,
-    yield_time_ms: int | None = None,
-    max_output_tokens: int | None = None,
-    wait_seconds: int = 20,
-) -> dict[str, Any]:
+    yield_time_ms: YieldTimeMs | None = None,
+    max_output_tokens: MaxOutputTokens | None = None,
+    wait_seconds: WaitSeconds = 20,
+) -> JobOutput:
     """Run a command in an upstream DevSpace workspace, returning a process session when still running."""
     return remote_control.exec_workspace_command(
         device_id,
@@ -153,15 +227,15 @@ def exec_workspace_command(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE, structured_output=True)
 def write_workspace_stdin(
-    device_id: str,
-    workspace_id: str,
-    session_id: int,
-    chars: str = "",
-    yield_time_ms: int | None = None,
-    wait_seconds: int = 20,
-) -> dict[str, Any]:
+    device_id: DeviceId,
+    workspace_id: WorkspaceId,
+    session_id: SessionId,
+    chars: StdinChars = "",
+    yield_time_ms: YieldTimeMs | None = None,
+    wait_seconds: WaitSeconds = 20,
+) -> JobOutput:
     """Poll or interact with a running upstream DevSpace process session."""
     return remote_control.write_workspace_stdin(
         device_id,
@@ -173,8 +247,8 @@ def write_workspace_stdin(
     )
 
 
-@mcp.tool()
-def get_job(job_id: str, region: str) -> dict[str, Any]:
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+def get_job(job_id: JobId, region: BrokerRegion) -> JobOutput:
     """Get a Nexus job by ID from the specified eu or cn broker."""
     return remote_control.get_job(job_id, region)
 

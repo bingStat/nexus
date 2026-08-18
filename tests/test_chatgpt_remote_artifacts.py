@@ -23,6 +23,7 @@ def test_chatgpt_remote_openapi_is_valid() -> None:
 def test_chatgpt_remote_installer_deploys_mcp_and_action_api() -> None:
     text = (ROOT / "install.sh").read_text(encoding="utf-8")
     assert "chatgpt_api.py" in text
+    assert "mcp_contracts.py" in text
     assert "mcp_server.py" in text
     assert "nexus-chatgpt-remote.service" in text
     assert "nexus-v3-mcp.service" in text
