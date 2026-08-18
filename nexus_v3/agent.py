@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import os
 import platform
 import socket
@@ -115,6 +116,25 @@ def command_argv(command: str) -> list[str]:
             return ["cmd.exe", "/d", "/s", "/c", command]
         return ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
     return ["/bin/sh", "-c", command]
+
+
+def decode_process_output(data: bytes | None) -> str:
+    if not data:
+        return ""
+    encodings = ["utf-8", locale.getpreferredencoding(False)]
+    if os.name == "nt":
+        encodings.extend(["mbcs", "cp1252"])
+    tried: set[str] = set()
+    for encoding in encodings:
+        normalized = encoding.lower()
+        if normalized in tried:
+            continue
+        tried.add(normalized)
+        try:
+            return data.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return data.decode("utf-8", errors="replace")
 
 
 def load_devspace_runtime(config: dict) -> tuple[DevSpaceRuntime | None, dict]:
@@ -243,9 +263,9 @@ def execute_job(job: dict, devspace: DevSpaceRuntime | None) -> tuple[str, int, 
     if operation != "shell.execute":
         raise RuntimeError(f"unsupported operation: {operation}")
     command = str(input_data.get("command") or job.get("command") or "")
-    proc = subprocess.run(command_argv(command), text=True, capture_output=True, timeout=timeout)
+    proc = subprocess.run(command_argv(command), text=False, capture_output=True, timeout=timeout)
     status = "completed" if proc.returncode == 0 else "failed"
-    output = (proc.stdout + proc.stderr)[-20000:]
+    output = (decode_process_output(proc.stdout) + decode_process_output(proc.stderr))[-20000:]
     return status, proc.returncode, output, {"output": output, "exitCode": proc.returncode}
 
 
@@ -275,8 +295,8 @@ def execute_and_complete(
     except subprocess.TimeoutExpired as exc:
         status = "timeout"
         exit_code = 124
-        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        stdout = decode_process_output(exc.stdout) if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = decode_process_output(exc.stderr) if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         output = (stdout + stderr + f"\ncommand timed out after {timeout}s")[-20000:]
         result = {"error": output, "exitCode": exit_code}
     except Exception as exc:

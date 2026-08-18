@@ -63,6 +63,28 @@ def test_agent_command_argv_uses_platform_shell() -> None:
             assert v3_agent.command_argv("echo ok") == ["cmd.exe", "/d", "/s", "/c", "echo ok"]
 
 
+def test_agent_decodes_subprocess_output_without_crashing() -> None:
+    assert v3_agent.decode_process_output("plain utf8".encode("utf-8")) == "plain utf8"
+    assert "bad" in v3_agent.decode_process_output(b"bad\x8foutput")
+
+
+def test_windows_installer_uses_task_scheduler_as_single_supervisor() -> None:
+    root = Path(__file__).resolve().parents[1]
+    installer = (root / "install.ps1").read_text(encoding="utf-8")
+
+    assert "Register-ScheduledTask" in installer
+    assert '"NexusV3Agent"' in installer
+    assert "MultipleInstances" in installer
+    assert "RestartCount" in installer
+    assert "run-agent.ps1" in installer
+    assert "New-ItemProperty -Path $RunKey" not in installer
+    assert "New-ItemProperty -Path \"HKCU:" not in installer
+    assert "$VbsRunner" not in installer
+    assert "WshShell.Run" not in installer
+    assert ":restart" not in installer
+    assert "timeout /t" not in installer
+
+
 def test_v3_installers_are_separate_from_legacy_services() -> None:
     root = Path(__file__).resolve().parents[1]
     installer = (root / "install.sh").read_text(encoding="utf-8")

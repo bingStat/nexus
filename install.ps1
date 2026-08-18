@@ -91,23 +91,41 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText("$InstallDir\v3.json", ($Config | ConvertTo-Json -Depth 8), $Utf8NoBom)
 
 $Runner = @"
-@echo off
-setlocal
-set NEXUS_V3_CONFIG=$InstallDir\v3.json
-cd /d $InstallDir
-:restart
-"$RuntimePython" -m nexus_v3.agent >> "$InstallDir\logs\agent.log" 2>&1
-set NEXUS_AGENT_EXIT=%ERRORLEVEL%
-echo [%DATE% %TIME%] nexus_v3.agent exited with code %NEXUS_AGENT_EXIT%; restarting in 5 seconds>> "$InstallDir\logs\agent.log"
-timeout /t 5 /nobreak >nul
-goto restart
+`$ErrorActionPreference = "Stop"
+`$env:NEXUS_V3_CONFIG = "$InstallDir\v3.json"
+`$env:PYTHONUTF8 = "1"
+`$env:PYTHONIOENCODING = "utf-8"
+`$logDir = "$InstallDir\logs"
+`$logPath = Join-Path `$logDir "agent.log"
+New-Item -ItemType Directory -Force -Path `$logDir | Out-Null
+
+if ((Test-Path `$logPath) -and (Get-Item `$logPath).Length -ge 10MB) {
+    `$archive = Join-Path `$logDir ("agent-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+    Move-Item `$logPath `$archive -Force
+}
+Get-ChildItem `$logDir -Filter "agent-*.log" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -Skip 5 |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+Set-Location "$InstallDir"
+try {
+    & "$RuntimePython" -m nexus_v3.agent *>> `$logPath
+    `$exitCode = `$LASTEXITCODE
+    if (`$exitCode -eq 42) { exit 0 }
+    exit `$exitCode
+}
+catch {
+    Add-Content -Path `$logPath -Encoding UTF8 -Value ("[{0}] supervisor error: {1}" -f (Get-Date -Format o), `$_.Exception.Message)
+    exit 1
+}
 "@
-$Runner | Set-Content "$InstallDir\run-agent.cmd" -Encoding ascii
+[System.IO.File]::WriteAllText("$InstallDir\run-agent.ps1", $Runner, $Utf8NoBom)
 
 $LegacyTaskNames = @(
     "NexusAgent",
-    "NexusV3Agent",
-    "Nexus v3 Agent ($($DeviceId.ToLowerInvariant()))"
+    "Nexus v3 Agent ($($DeviceId.ToLowerInvariant()))",
+    "NexusV3Agent-Watchdog"
 )
 foreach ($TaskName in $LegacyTaskNames) {
     try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch {}
@@ -119,29 +137,36 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         $_.ProcessId -ne $PID -and
         $_.CommandLine -and
         $_.CommandLine -match $InstallDirPattern -and
-        ($_.CommandLine -match "nexus_v3\.agent" -or $_.CommandLine -match "run-agent\.cmd")
+        ($_.CommandLine -match "nexus_v3\.agent" -or $_.CommandLine -match "run-agent\.cmd" -or $_.CommandLine -match "run-agent\.ps1")
     } |
-    Sort-Object { if ($_.Name -eq 'cmd.exe') { 0 } else { 1 } } |
+    Sort-Object { if ($_.Name -eq 'cmd.exe' -or $_.Name -eq 'powershell.exe') { 0 } else { 1 } } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 $LegacyDir = "$env:USERPROFILE\.nexus-agent"
 if (Test-Path $LegacyDir) { Remove-Item $LegacyDir -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-Item "$InstallDir\agent.log", "$InstallDir\ssh_ed25519.pub" -Force -ErrorAction SilentlyContinue
+Remove-Item "$InstallDir\run-agent.cmd", "$InstallDir\run-agent-silent.vbs", "$InstallDir\run-silent.vbs", "$InstallDir\watchdog.ps1" -Force -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "NexusV3Agent" -ErrorAction SilentlyContinue
 
-$VbsRunner = @"
-Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "cmd /c """ & "$InstallDir\run-agent.cmd" & """", 0, False
-"@
-$VbsRunner | Set-Content "$InstallDir\run-agent-silent.vbs" -Encoding ascii
-
-$RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-New-Item -Path $RunKey -Force | Out-Null
-$RunCommand = 'wscript.exe "{0}\run-agent-silent.vbs"' -f $InstallDir
-New-ItemProperty -Path $RunKey -Name "NexusV3Agent" -PropertyType String -Value $RunCommand -Force | Out-Null
+$TaskName = "NexusV3Agent"
+try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch {}
+try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+$TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\run-agent.ps1"' -f $InstallDir)
+$TaskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$TaskPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+$TaskSettings = New-ScheduledTaskSettingsSet `
+    -MultipleInstances IgnoreNew `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger -Principal $TaskPrincipal -Settings $TaskSettings | Out-Null
 
 & $RuntimePython -m py_compile "$InstallDir\nexus_v3\agent.py" "$InstallDir\nexus_v3\ledger.py"
 if ($LASTEXITCODE -ne 0) { throw "Nexus Python compile check failed" }
-Start-Process "wscript.exe" -ArgumentList "`"$InstallDir\run-agent-silent.vbs`""
+Start-ScheduledTask -TaskName $TaskName
 Start-Sleep -Seconds 3
 
 
@@ -168,7 +193,7 @@ Write-Host "================================================================" -F
 Write-Host " Device ID:     $DeviceId"
 Write-Host " Platform:      $([System.Environment]::OSVersion.VersionString)"
 Write-Host " Install Dir:   $InstallDir"
-Write-Host " Startup:       HKCU Run\NexusV3Agent (user-level, no admin needed)"
+Write-Host " Startup:       Task Scheduler\NexusV3Agent (single supervisor)"
 Write-Host " Registry:      $RegistryUrl"
 Write-Host " Broker:        $BrokerUrl"
 Write-Host " Cluster State: $approvalStatus" -ForegroundColor (if ($approvalStatus -match "Approved") { "Green" } else { "Yellow" })
