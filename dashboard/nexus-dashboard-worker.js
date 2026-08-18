@@ -211,7 +211,7 @@ function loginHtml({ error = false, target = '/' } = {}) {
 function authorizeHtml({ error = false, params = {} } = {}) {
   const clientName = htmlEscape(params.client_name || params.client_id || 'AI Assistant');
   const scopeDesc = 'Nexus 集群管理、远程命令执行与 DevSpace 工作区控制';
-  
+
   const hiddenFields = Object.entries(params)
     .filter(([k, v]) => v !== undefined && k !== 'client_name')
     .map(([k, v]) => `<input type="hidden" name="${htmlEscape(k)}" value="${htmlEscape(v)}" />`)
@@ -219,25 +219,157 @@ function authorizeHtml({ error = false, params = {} } = {}) {
 
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>授权 Nexus MCP 连接</title><style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070b14;color:#eef4ff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(440px,calc(100vw - 32px));padding:32px 28px;border:1px solid #23304a;border-radius:18px;background:#0d1422;box-shadow:0 24px 80px rgba(0,0,0,.6)}.brand{display:flex;align-items:center;gap:12px;margin-bottom:20px}.icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#38bdf8,#818cf8);font-size:22px;box-shadow:0 0 24px #38bdf855}.title{font-size:18px;font-weight:800;letter-spacing:.15em}.sub{font-size:12px;color:#8192b1;margin-top:2px}h2{font-size:16px;margin:0 0 12px;color:#f1f5f9}.scope-box{background:#080d17;border:1px solid #1e293b;border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:13px;color:#94a3b8;line-height:1.5}.scope-box strong{color:#38bdf8;display:block;margin-bottom:4px}label{display:block;font-size:12px;color:#9aabc7;margin-bottom:8px}input[type="password"]{width:100%;height:44px;border:1px solid #2a3957;border-radius:9px;background:#080d17;color:#fff;padding:0 12px;font-size:15px;outline:none}input[type="password"]:focus{border-color:#38bdf8;box-shadow:0 0 0 3px #38bdf822}button{width:100%;height:44px;margin-top:16px;border:0;border-radius:9px;background:#38bdf8;color:#020617;font-weight:700;font-size:14px;cursor:pointer}button:hover{background:#0ea5e9}.error{margin:0 0 12px;color:#ff718c;font-size:12px;background:#7f1d1d33;padding:8px 12px;border-radius:6px;border:1px solid #ff718c44}.foot{margin-top:18px;text-align:center;color:#64748b;font-size:11px}</style></head>
-<body><main class="card"><div class="brand"><div class="icon">⚡</div><div><div class="title">NEXUS</div><div class="sub">Distributed Fleet & DevSpace MCP</div></div></div>
-<h2>授权连接</h2>
-<div class="scope-box">
-  <strong>${clientName} 请求访问：</strong>
-  ${scopeDesc}
-</div>
-${error ? '<p class="error">密码不正确，请重新输入 Nexus 主密码。</p>' : ''}
-<form method="post" action="/authorize">
-  ${hiddenFields}
-  <label for="password">输入 Nexus 密码以批准连接</label>
-  <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
-  <button type="submit">批准并授权</button>
-</form>
-<div class="foot">密码由 Bitwarden 管理 · 单点认证访问全部设备</div>
-</main></body></html>`;
+<title>授权 Nexus MCP 连接</title>
+<script>
+(() => {
+  try {
+    const saved = localStorage.getItem('nexus:theme');
+    const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = saved || (systemDark ? 'dark' : 'light');
+  } catch (_) {
+    document.documentElement.dataset.theme = 'light';
+  }
+})();
+</script>
+<style>
+:root{
+  color-scheme:light;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","Segoe UI","Noto Sans SC",Arial,sans-serif;
+  --bg:#f5f5f7;--surface:#fff;--surface2:#fbfbfd;--text:#1d1d1f;--muted:#6e6e73;
+  --border:rgba(0,0,0,.08);--field:#fff;--field-border:#d2d2d7;--blue:#0066cc;
+  --blue-hover:#0077ed;--blue-soft:#e8f2ff;--danger:#d70015;--danger-soft:rgba(215,0,21,.07);
+  --header:rgba(250,250,252,.82);--shadow:0 18px 54px rgba(0,0,0,.07);
 }
-
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#000;--surface:#1c1c1e;--surface2:#2c2c2e;--text:#f5f5f7;--muted:#a1a1a6;
+  --border:rgba(255,255,255,.10);--field:#2c2c2e;--field-border:rgba(255,255,255,.16);
+  --blue:#2997ff;--blue-hover:#64b5ff;--blue-soft:rgba(41,151,255,.15);
+  --danger:#ff453a;--danger-soft:rgba(255,69,58,.10);--header:rgba(22,22,23,.82);
+  --shadow:0 18px 54px rgba(0,0,0,.34);
+}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{
+  margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font);
+  -webkit-font-smoothing:antialiased;letter-spacing:-.005em;
+}
+.topbar{
+  position:fixed;inset:0 0 auto;z-index:10;height:48px;background:var(--header);
+  border-bottom:1px solid var(--border);backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+}
+.topbar-inner{
+  width:min(1164px,100%);height:100%;margin:0 auto;padding:0 32px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.wordmark{display:flex;flex-direction:column;justify-content:center}
+.wordmark strong{font-size:1.08rem;font-weight:600;line-height:1.15;letter-spacing:-.02em}
+.wordmark span{margin-top:1px;color:var(--muted);font-size:.66rem}
+.theme-toggle{
+  width:32px;height:32px;padding:0;border:0;border-radius:999px;display:inline-flex;
+  align-items:center;justify-content:center;background:rgba(0,0,0,.045);color:var(--text);
+  font:inherit;font-size:1rem;line-height:1;cursor:pointer;transition:background .18s ease;
+}
+.theme-toggle:hover{background:rgba(0,0,0,.085)}
+:root[data-theme="dark"] .theme-toggle{background:rgba(255,255,255,.09)}
+:root[data-theme="dark"] .theme-toggle:hover{background:rgba(255,255,255,.15)}
+.theme-toggle:focus-visible{outline:3px solid rgba(0,102,204,.22);outline-offset:2px}
+.auth-shell{min-height:100vh;padding:88px 20px 40px;display:grid;place-items:center}
+.card{
+  width:min(480px,100%);padding:36px;background:var(--surface);border:1px solid var(--border);
+  border-radius:24px;box-shadow:var(--shadow);
+}
+.eyebrow{margin:0 0 10px;color:var(--blue);font-size:.72rem;font-weight:600;letter-spacing:.01em}
+h1{margin:0;font-size:1.8rem;line-height:1.12;font-weight:600;letter-spacing:-.035em}
+.lead{margin:10px 0 0;color:var(--muted);font-size:.91rem;line-height:1.55}
+.scope-box{
+  display:flex;gap:13px;align-items:flex-start;margin:24px 0;padding:16px;
+  border-radius:16px;background:var(--surface2);
+}
+.scope-icon{
+  width:30px;height:30px;flex:0 0 auto;border-radius:9px;display:grid;place-items:center;
+  background:var(--blue-soft);color:var(--blue);font-size:.9rem;font-weight:700;
+}
+.scope-copy{min-width:0;color:var(--muted);font-size:.82rem;line-height:1.5}
+.scope-copy strong{display:block;margin-bottom:3px;color:var(--text);font-size:.88rem;font-weight:600}
+.error{
+  margin:0 0 16px;padding:11px 13px;border-radius:12px;background:var(--danger-soft);
+  color:var(--danger);font-size:.8rem;line-height:1.45;
+}
+label{display:block;margin-bottom:8px;color:var(--muted);font-size:.75rem;font-weight:500}
+input[type="password"]{
+  width:100%;height:50px;padding:0 14px;border:1px solid var(--field-border);border-radius:12px;
+  background:var(--field);color:var(--text);font:inherit;font-size:1rem;outline:none;
+  transition:border-color .18s ease,box-shadow .18s ease;
+}
+input[type="password"]:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(0,102,204,.12)}
+button[type="submit"]{
+  width:100%;height:48px;margin-top:16px;border:0;border-radius:999px;background:var(--blue);
+  color:#fff;font:inherit;font-size:.9rem;font-weight:600;cursor:pointer;
+  transition:background .18s ease,transform .18s ease;
+}
+button[type="submit"]:hover{background:var(--blue-hover)}
+button[type="submit"]:active{transform:scale(.99)}
+button[type="submit"]:focus-visible{outline:3px solid rgba(0,102,204,.22);outline-offset:2px}
+.foot{margin-top:18px;text-align:center;color:var(--muted);font-size:.69rem;line-height:1.45}
+@media(max-width:620px){
+  .topbar-inner{padding:0 16px}.wordmark span{display:none}
+  .auth-shell{padding:74px 12px 24px}.card{padding:28px 22px;border-radius:20px}
+  h1{font-size:1.6rem}.scope-box{margin:20px 0;padding:14px}
+}
+</style></head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="wordmark"><strong>Nexus</strong><span>集群控制中心</span></div>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换夜间模式" title="切换夜间模式"><span id="theme-toggle-icon" aria-hidden="true">☾</span></button>
+  </div>
+</header>
+<main class="auth-shell">
+  <section class="card" aria-labelledby="auth-title">
+    <p class="eyebrow">Nexus MCP</p>
+    <h1 id="auth-title">授权连接</h1>
+    <p class="lead">确认此客户端可以连接你的 Nexus 控制平面。</p>
+    <div class="scope-box">
+      <div class="scope-icon" aria-hidden="true">N</div>
+      <div class="scope-copy">
+        <strong>${clientName} 请求访问</strong>
+        ${scopeDesc}
+      </div>
+    </div>
+    ${error ? '<p class="error" role="alert">密码不正确，请重新输入 Nexus 主密码。</p>' : ''}
+    <form method="post" action="/authorize">
+      ${hiddenFields}
+      <label for="password">Nexus 密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+      <button type="submit">批准并授权</button>
+    </form>
+    <div class="foot">密码由 Bitwarden 管理 · 单点认证访问全部设备</div>
+  </section>
+</main>
+<script>
+(() => {
+  const root = document.documentElement;
+  const button = document.getElementById('theme-toggle');
+  const icon = document.getElementById('theme-toggle-icon');
+  const sync = () => {
+    const dark = root.dataset.theme === 'dark';
+    icon.textContent = dark ? '☀' : '☾';
+    button.setAttribute('aria-label', dark ? '切换浅色模式' : '切换夜间模式');
+    button.setAttribute('title', dark ? '切换浅色模式' : '切换夜间模式');
+  };
+  button.addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem('nexus:theme', next); } catch (_) {}
+    sync();
+  });
+  sync();
+})();
+</script>
+</body></html>`;
+}
 function contentTypeForObject(key) {
   if (key.endsWith('.html')) return 'text/html; charset=utf-8';
   if (key.endsWith('.md')) return 'text/markdown; charset=utf-8';
