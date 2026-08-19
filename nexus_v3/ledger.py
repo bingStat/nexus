@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import tempfile
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,10 +25,24 @@ class ExecutionLedger:
 
     def __init__(self, path: Path):
         self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        try:
+            self._initialize()
+        except sqlite3.OperationalError:
+            # HPC home directories are commonly backed by NFS/GPFS/Lustre where
+            # SQLite locking or journal semantics can fail. Keep the durable path
+            # when it works; otherwise fall back to a node-local runtime ledger so
+            # the control agent remains available instead of crashing at startup.
+            uid = os.getuid() if hasattr(os, "getuid") else os.getpid()
+            self.path = Path(tempfile.gettempdir()) / f"nexus-agent-v3-{uid}" / path.name
+            self._initialize()
+
+    def _initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
-            db.execute("PRAGMA journal_mode=WAL")
+            # The agent is a single writer. Rollback-journal mode is sufficient
+            # and is substantially more portable than WAL on network filesystems.
+            db.execute("PRAGMA journal_mode=DELETE")
             db.execute("PRAGMA busy_timeout=10000")
             db.execute(
                 """CREATE TABLE IF NOT EXISTS executions (
