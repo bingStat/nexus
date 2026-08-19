@@ -62,6 +62,13 @@ def test_execution_ledger_replays_terminal_result_without_rerun() -> None:
         assert ledger.begin(conflicting)[0] == "conflict"
 
 
+def test_execution_ledger_avoids_wal_for_hpc_network_filesystems() -> None:
+    source = (ROOT / "nexus_v3" / "ledger.py").read_text(encoding="utf-8")
+    assert "PRAGMA journal_mode=WAL" not in source
+    assert "PRAGMA journal_mode=DELETE" in source
+    assert "tempfile.gettempdir()" in source
+
+
 def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     linux = (ROOT / "install.sh").read_text(encoding="utf-8")
     windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
