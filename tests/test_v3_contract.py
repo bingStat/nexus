@@ -46,13 +46,18 @@ def test_registry_schema_has_no_legacy_signing_public_key() -> None:
         assert "public_key_ed25519" not in row
 
 
+def test_registry_handler_matches_store_get_contract() -> None:
+    registry = (Path(__file__).resolve().parents[1] / "nexus_v3" / "registry.py").read_text(encoding="utf-8")
+    assert "include_key=False" not in registry
+
+
 def test_v3_rejects_wrong_device_key() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         identity = Identity(Path(tmp) / "device.key")
         other = Identity(Path(tmp) / "other.key")
         headers = other.auth_headers("n1")
         with pytest.raises(PermissionError, match="authentication failed"):
-            verify_device_key(identity.key_id, headers)
+            verify_device_key(identity.key_id, headers) == "n1"
 
 def test_agent_command_argv_uses_platform_shell() -> None:
     if v3_agent.os.name == "nt":
