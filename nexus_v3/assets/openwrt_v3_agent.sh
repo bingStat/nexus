@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-AGENT_VERSION="3.0.0-openwrt"
+AGENT_VERSION="3.2.0-openwrt"
 CONFIG_FILE="${NEXUS_V3_CONFIG:-/etc/nexus-agent/v3.env}"
 [ -r "$CONFIG_FILE" ] || { echo "missing config: $CONFIG_FILE" >&2; exit 1; }
 . "$CONFIG_FILE"
@@ -18,6 +18,8 @@ LOCK_DIR="${NEXUS_LOCK_DIR:-/var/run/nexus-v3-agent.lock}"
 POLL_SECONDS="${NEXUS_POLL_SECONDS:-1}"
 WAIT_SECONDS="${NEXUS_WAIT_SECONDS:-20}"
 REQUEST_TIMEOUT="${NEXUS_REQUEST_TIMEOUT:-35}"
+SSH_SYNC_SCRIPT="${NEXUS_SSH_SYNC_SCRIPT:-/opt/nexus-agent/sync_ssh_authorized_keys.sh}"
+SSH_SYNC_INTERVAL="${NEXUS_SSH_SYNC_INTERVAL:-300}"
 
 mkdir -p "$RUN_DIR"
 [ -d "$LOCK_DIR" ] || mkdir -p "$LOCK_DIR" 2>/dev/null || true
@@ -149,8 +151,22 @@ complete_job() {
     -H 'Content-Type: application/json' --data-binary "@$payload" >/dev/null 2>&1 || true
 }
 
+LAST_SSH_SYNC=0
+maybe_sync_ssh_keys() {
+  [ -x "$SSH_SYNC_SCRIPT" ] || return 0
+  now="$(date +%s 2>/dev/null || echo 0)"
+  case "$now" in ''|*[!0-9]*) now=0 ;; esac
+  case "$SSH_SYNC_INTERVAL" in ''|*[!0-9]*) SSH_SYNC_INTERVAL=300 ;; esac
+  if [ "$LAST_SSH_SYNC" -eq 0 ] || [ "$now" -eq 0 ] || [ $((now - LAST_SSH_SYNC)) -ge "$SSH_SYNC_INTERVAL" ]; then
+    "$SSH_SYNC_SCRIPT" >/dev/null 2>&1 || true
+    LAST_SSH_SYNC="$now"
+  fi
+}
+
 register_device
+maybe_sync_ssh_keys
 while :; do
+  maybe_sync_ssh_keys
   if claim_job; then
     id="$(json_get id "$RUN_DIR/claim.json")"
     command_text="$(json_get command "$RUN_DIR/claim.json")"

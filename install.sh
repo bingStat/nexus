@@ -39,6 +39,55 @@ install_python_package() {
   done
 }
 
+resolve_ssh_home() {
+  device_id="$1"
+  if [ -n "${NEXUS_SSH_HOME:-}" ]; then
+    printf '%s\n' "$NEXUS_SSH_HOME"
+    return 0
+  fi
+  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && [ -r /etc/passwd ]; then
+    candidate="$(awk -F: -v u="$SUDO_USER" '$1==u{print $6; exit}' /etc/passwd)"
+    if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  case "$device_id" in
+    thinkcenter|victus-wsl) [ -d /home/bing ] && { printf '%s\n' /home/bing; return 0; } ;;
+    oracle|oracle-amd) [ -d /home/ubuntu ] && { printf '%s\n' /home/ubuntu; return 0; } ;;
+  esac
+  printf '%s\n' /root
+}
+
+ssh_owner_for_home() {
+  home="$1"
+  [ -r /etc/passwd ] || return 0
+  awk -F: -v h="$home" '$6==h{print $1; exit}' /etc/passwd
+}
+
+ensure_device_ssh_key() {
+  device_id="$1"
+  ssh_home="$2"
+  ssh_owner="${3:-}"
+  command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen is required to create the per-device SSH key"
+  ssh_dir="$ssh_home/.ssh"
+  SSH_KEY_PATH="$ssh_dir/id_ed25519_$device_id"
+  SSH_PUB_PATH="$SSH_KEY_PATH.pub"
+  mkdir -p "$ssh_dir"
+  chmod 700 "$ssh_dir"
+  if [ ! -f "$SSH_KEY_PATH" ]; then
+    ssh-keygen -q -t ed25519 -N '' -C "nexus-$device_id@$(hostname 2>/dev/null || echo unknown)" -f "$SSH_KEY_PATH"
+  elif [ ! -f "$SSH_PUB_PATH" ]; then
+    public_body="$(ssh-keygen -y -f "$SSH_KEY_PATH")"
+    printf '%s nexus-%s@%s\n' "$public_body" "$device_id" "$(hostname 2>/dev/null || echo unknown)" > "$SSH_PUB_PATH"
+  fi
+  chmod 600 "$SSH_KEY_PATH"
+  chmod 644 "$SSH_PUB_PATH"
+  if [ -n "$ssh_owner" ] && id "$ssh_owner" >/dev/null 2>&1; then
+    chown "$ssh_owner" "$ssh_dir" "$SSH_KEY_PATH" "$SSH_PUB_PATH"
+  fi
+}
+
 cleanup_retired_linux() {
   command -v systemctl >/dev/null 2>&1 || return 0
   retired_units="nexus-agent.service nexus-mcp.service nexus-broker.service nexus-n1-api-proxy.service nexus-readonly-api.service nexus-state-sync.service nexus-state-sync.timer nexus-peer-watchdog.service nexus-peer-watchdog.timer nexus-remediator.service nexus-remediator.timer nexus-api-dns-failover.service nexus-bootstrap-mirror.service nexus-global-api.service nexus-eu-broker.service nexus-eu-broker-tailnet.service nexus-oracle-api-relay.service nexus-oracle-container-recovery.service nexus-oracle-health-server.service nexus-oracle-health.service nexus-oracle-health.timer nexus-oracle-monitor.service nexus-oracle-monitor.timer nexus-oracle-standby.service nexus-telegram-source-sync.service nexus-telegram-source-sync.timer"
@@ -79,6 +128,7 @@ REGISTRY_URL="${OVERRIDE_REGISTRY_URL:-${NEXUS_V3_REGISTRY_URL:-}}"
 
 target_home="${NEXUS_SSH_AUTHORIZED_HOME:-/root}"
 auth_file="${NEXUS_SSH_AUTHORIZED_KEYS_FILE:-$target_home/.ssh/authorized_keys}"
+auth_owner="${NEXUS_SSH_AUTHORIZED_OWNER:-}"
 ssh_dir="$(dirname "$auth_file")"
 keys_file="/tmp/nexus-authorized-keys.$$"
 tmp_file="/tmp/nexus-authorized-keys-out.$$"
@@ -106,6 +156,7 @@ awk -v begin="$begin" -v end="$end" '
   printf "%s\n" "$end"
 } > "$auth_file"
 chmod 600 "$auth_file"
+[ -n "$auth_owner" ] && chown "$auth_owner" "$ssh_dir" "$auth_file" 2>/dev/null || true
 EOF
   chmod 755 "$install_dir/sync_ssh_authorized_keys.sh"
   mkdir -p /etc/nexus-agent
@@ -116,7 +167,12 @@ EOF
 }
 
 install_ssh_sync_systemd() {
-  install_ssh_sync_script /opt/nexus-agent "${1:-https://nexus-global-api.bings.app}"
+  registry_url="${1:-https://nexus-global-api.bings.app}"
+  auth_file="${2:-/root/.ssh/authorized_keys}"
+  auth_owner="${3:-}"
+  install_ssh_sync_script /opt/nexus-agent "$registry_url"
+  append_env_once /etc/nexus-agent/ssh-sync.env NEXUS_SSH_AUTHORIZED_KEYS_FILE "$auth_file"
+  [ -n "$auth_owner" ] && append_env_once /etc/nexus-agent/ssh-sync.env NEXUS_SSH_AUTHORIZED_OWNER "$auth_owner"
   cat > /etc/systemd/system/nexus-ssh-authorized-keys.service <<'EOF'
 [Unit]
 Description=Nexus SSH authorized keys sync
@@ -281,8 +337,8 @@ install_openwrt_agent() {
   config_file="$config_dir/v3.env"
   identity_key="$config_dir/identity_ed25519"
   identity_pub="$config_dir/identity_ed25519.pub"
-  ssh_key="$identity_key"
-  ssh_pub="$identity_pub"
+  ssh_key="/root/.ssh/id_ed25519_$device_id"
+  ssh_pub="$ssh_key.pub"
 
   mkdir -p "$install_dir" "$config_dir"
   chmod 700 "$config_dir"
@@ -298,6 +354,26 @@ install_openwrt_agent() {
   chmod 600 "$identity_key"
   chmod 644 "$identity_pub"
 
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  if [ ! -f "$ssh_key" ]; then
+    if command -v dropbearkey >/dev/null 2>&1; then
+      dropbearkey -t ed25519 -f "$ssh_key" >/dev/null 2>&1 || fail "failed to generate Dropbear SSH key"
+      dropbearkey -y -f "$ssh_key" 2>/dev/null | awk '/^ssh-ed25519 / {print; exit}' | sed "s/$/ nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)/" > "$ssh_pub"
+    else
+      ruby "$install_dir/openwrt_ed25519_signer.rb" generate "$ssh_key" "$ssh_pub" "nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)" || fail "failed to generate SSH key"
+    fi
+  elif [ ! -f "$ssh_pub" ]; then
+    if command -v dropbearkey >/dev/null 2>&1; then
+      dropbearkey -y -f "$ssh_key" 2>/dev/null | awk '/^ssh-ed25519 / {print; exit}' | sed "s/$/ nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)/" > "$ssh_pub"
+    else
+      ruby "$install_dir/openwrt_ed25519_signer.rb" public "$ssh_key" "$ssh_pub" "nexus-$device_id@$(hostname 2>/dev/null || echo openwrt)" || fail "failed to derive SSH public key"
+    fi
+  fi
+  [ -s "$ssh_pub" ] || fail "failed to produce SSH public key"
+  chmod 600 "$ssh_key"
+  chmod 644 "$ssh_pub"
+
   quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
   {
     printf 'NEXUS_DEVICE_ID=%s\n' "$(quote "$device_id")"
@@ -307,6 +383,8 @@ install_openwrt_agent() {
     printf 'NEXUS_IDENTITY_PUBLIC_KEY=%s\n' "$(quote "$identity_pub")"
     printf 'NEXUS_SSH_PRIVATE_KEY=%s\n' "$(quote "$ssh_key")"
     printf 'NEXUS_SSH_PUBLIC_KEY=%s\n' "$(quote "$ssh_pub")"
+    printf 'NEXUS_SSH_SYNC_SCRIPT=%s\n' "$(quote "$install_dir/sync_ssh_authorized_keys.sh")"
+    printf 'NEXUS_SSH_SYNC_INTERVAL=%s\n' "$(quote "${NEXUS_SSH_SYNC_INTERVAL:-300}")"
     printf 'NEXUS_ED25519_SIGNER=%s\n' "$(quote "$install_dir/openwrt_ed25519_signer.rb")"
   } > "$config_file"
   chmod 600 "$config_file"
@@ -334,7 +412,7 @@ EOF
   /etc/init.d/nexus-v3-agent status >/dev/null 2>&1 || fail "openwrt agent did not start"
   trigger_cluster_ssh_sync
   printf 'Nexus OpenWrt self-claiming agent installed for %s\n' "$device_id"
-  printf 'Public key: %s\n' "$identity_pub"
+  printf 'SSH key: %s\n' "$ssh_key"
 }
 
 install_agent() {
@@ -361,11 +439,16 @@ install_agent() {
   config_file="$config_dir/v3.json"
   identity_key="$config_dir/identity_ed25519"
   identity_pub="$config_dir/identity_ed25519.pub"
-  ssh_key="$identity_key"
-  ssh_pub="$identity_pub"
+  ssh_home="$(resolve_ssh_home "$device_id")"
+  ssh_owner="${NEXUS_SSH_OWNER:-$(ssh_owner_for_home "$ssh_home")}"
+  ensure_device_ssh_key "$device_id" "$ssh_home" "$ssh_owner"
+  ssh_key="$SSH_KEY_PATH"
+  ssh_pub="$SSH_PUB_PATH"
+  ssh_authorized_keys="$ssh_home/.ssh/authorized_keys"
+  ssh_sync_interval="${NEXUS_SSH_SYNC_INTERVAL:-300}"
   mkdir -p "$install_dir" "$config_dir"
   chmod 700 "$config_dir"
-  install_python_package "$install_dir" __init__.py common.py agent.py devspace_runtime.py ledger.py
+  install_python_package "$install_dir" __init__.py common.py agent.py devspace_runtime.py ledger.py ssh_fleet.py
 
   devspace_bridge=""
   devspace_roots="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-}"
@@ -396,6 +479,8 @@ config = {
     "identity_public_key": "$identity_pub",
     "ssh_private_key": "$ssh_key",
     "ssh_public_key": "$ssh_pub",
+    "ssh_authorized_keys": "$ssh_authorized_keys",
+    "ssh_sync_interval": $ssh_sync_interval,
     "wait_seconds": 20,
     "poll_seconds": 1,
     "request_timeout": 35,
@@ -441,12 +526,12 @@ EOF
   systemctl daemon-reload
   systemctl enable nexus-v3-agent.service >/dev/null
   systemctl restart nexus-v3-agent.service
-  install_ssh_sync_systemd "$registry_url"
+  install_ssh_sync_systemd "$registry_url" "$ssh_authorized_keys" "$ssh_owner"
   sleep 2
   systemctl is-active --quiet nexus-v3-agent.service || fail "agent service did not start"
   trigger_cluster_ssh_sync
   printf 'Nexus agent installed for %s\n' "$device_id"
-  printf 'Public key: %s\n' "$identity_pub"
+  printf 'SSH key: %s\n' "$ssh_key"
 }
 
 
@@ -482,9 +567,14 @@ install_user_agent() {
   config_file="$config_dir/v3.json"
   identity_key="$install_dir/identity_ed25519"
   identity_pub="$install_dir/identity_ed25519.pub"
+  ensure_device_ssh_key "$device_id" "$HOME" "$(id -un)"
+  ssh_key="$SSH_KEY_PATH"
+  ssh_pub="$SSH_PUB_PATH"
+  ssh_authorized_keys="$HOME/.ssh/authorized_keys"
+  ssh_sync_interval="${NEXUS_SSH_SYNC_INTERVAL:-300}"
   mkdir -p "$install_dir/logs" "$config_dir"
   chmod 700 "$install_dir" "$config_dir"
-  install_python_package "$install_dir" __init__.py common.py agent.py devspace_runtime.py ledger.py
+  install_python_package "$install_dir" __init__.py common.py agent.py devspace_runtime.py ledger.py ssh_fleet.py
 
   devspace_bridge=""
   devspace_roots="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-$HOME}"
@@ -523,8 +613,10 @@ config = {
     "broker_url": "$broker_url".rstrip("/"),
     "identity_key": "$identity_key",
     "identity_public_key": "$identity_pub",
-    "ssh_private_key": "$identity_key",
-    "ssh_public_key": "$identity_pub",
+    "ssh_private_key": "$ssh_key",
+    "ssh_public_key": "$ssh_pub",
+    "ssh_authorized_keys": "$ssh_authorized_keys",
+    "ssh_sync_interval": $ssh_sync_interval,
     "wait_seconds": 20,
     "poll_seconds": 1,
     "request_timeout": 35,
@@ -587,6 +679,7 @@ EOF
   printf ' Persistence:   managed block in %s\n' "$profile"
   printf ' Registry:      %s\n' "$registry_url"
   printf ' Broker:        %s\n' "$broker_url"
+  printf ' SSH key:       %s\n' "$ssh_key"
   printf ' Cluster State: %s\n' "$approval_status"
   if [ -n "$devspace_bridge" ]; then
     printf ' DevSpace:      Enabled (bridge: %s)\n' "$devspace_bridge"

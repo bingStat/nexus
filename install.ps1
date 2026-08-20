@@ -31,7 +31,7 @@ function Test-RuntimePython([string]$Path) {
 }
 $Python = Get-Python
 New-Item -ItemType Directory -Force -Path "$InstallDir\nexus_v3", "$InstallDir\logs" | Out-Null
-foreach ($file in @("__init__.py","common.py","agent.py","devspace_runtime.py","ledger.py")) {
+foreach ($file in @("__init__.py","common.py","agent.py","devspace_runtime.py","ledger.py","ssh_fleet.py")) {
     Invoke-WebRequest -UseBasicParsing "$SourceBase/nexus_v3/$file" -OutFile "$InstallDir\nexus_v3\$file"
 }
 
@@ -45,6 +45,42 @@ if (-not (Test-RuntimePython $RuntimePython)) {
 }
 & $RuntimePython -m pip install --disable-pip-version-check --quiet requests cryptography
 if ($LASTEXITCODE -ne 0) { throw "Failed to install Nexus Python dependencies" }
+
+$SshDir = Join-Path $env:USERPROFILE ".ssh"
+$SshKey = Join-Path $SshDir ("id_ed25519_{0}" -f $DeviceId.ToLowerInvariant())
+$SshPub = "$SshKey.pub"
+$SshAuthorizedKeys = Join-Path $SshDir "authorized_keys"
+New-Item -ItemType Directory -Force -Path $SshDir | Out-Null
+$SshComment = "nexus-$($DeviceId.ToLowerInvariant())@$env:COMPUTERNAME"
+$SshKeyScript = @'
+from pathlib import Path
+import sys
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+key_path = Path(sys.argv[1])
+comment = sys.argv[2]
+if key_path.exists():
+    private_key = serialization.load_ssh_private_key(key_path.read_bytes(), password=None)
+else:
+    private_key = Ed25519PrivateKey.generate()
+    key_path.write_bytes(
+        private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.OpenSSH,
+            serialization.NoEncryption(),
+        )
+    )
+public_key = private_key.public_key().public_bytes(
+    serialization.Encoding.OpenSSH,
+    serialization.PublicFormat.OpenSSH,
+)
+Path(str(key_path) + ".pub").write_bytes(public_key + b" " + comment.encode("utf-8") + b"\n")
+'@
+if (-not (Test-Path $SshKey) -or -not (Test-Path $SshPub)) {
+    $SshKeyScript | & $RuntimePython - $SshKey $SshComment
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create the per-device SSH key: $SshKey" }
+}
 
 $DevSpace = $null
 $Node = Get-Command node -ErrorAction SilentlyContinue
@@ -74,8 +110,10 @@ $Config = [ordered]@{
     broker_url = $BrokerUrl.TrimEnd('/')
     identity_key = "$InstallDir\identity_ed25519"
     identity_public_key = "$InstallDir\identity_ed25519.pub"
-    ssh_private_key = "$InstallDir\identity_ed25519"
-    ssh_public_key = "$InstallDir\identity_ed25519.pub"
+    ssh_private_key = $SshKey
+    ssh_public_key = $SshPub
+    ssh_authorized_keys = $SshAuthorizedKeys
+    ssh_sync_interval = 300
     wait_seconds = 20; poll_seconds = 1; request_timeout = 35
     execution_ledger = "$InstallDir\execution-ledger.db"
 }
@@ -196,6 +234,7 @@ Write-Host " Install Dir:   $InstallDir"
 Write-Host " Startup:       Task Scheduler\NexusV3Agent (single supervisor)"
 Write-Host " Registry:      $RegistryUrl"
 Write-Host " Broker:        $BrokerUrl"
+Write-Host " SSH key:       $SshKey"
 Write-Host " Cluster State: $approvalStatus" -ForegroundColor (if ($approvalStatus -match "Approved") { "Green" } else { "Yellow" })
 if ($DevSpace) {
     Write-Host " DevSpace:      Enabled (Node: $($Node.Source))" -ForegroundColor Green

@@ -15,8 +15,9 @@ import requests
 from .common import Identity, b64url, canonical_registration_message, json_dumps
 from .devspace_runtime import DevSpaceRuntime
 from .ledger import ExecutionLedger
+from .ssh_fleet import sync_authorized_keys
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 
 class SingleInstanceLock:
@@ -79,7 +80,6 @@ class SingleInstanceLock:
 
 def config_path() -> Path:
     return Path(os.getenv("NEXUS_V3_CONFIG", "/etc/nexus-agent/v3.json"))
-
 
 
 def load_config() -> dict:
@@ -226,7 +226,53 @@ def main() -> None:
             flush=True,
         )
 
+        ssh_authorized_keys = str(config.get("ssh_authorized_keys") or "").strip()
+        ssh_sync_interval = max(60, int(config.get("ssh_sync_interval") or 300))
+        last_ssh_sync = 0.0
+
+        def maybe_sync_ssh_keys(force: bool = False) -> None:
+            nonlocal last_ssh_sync
+            if not ssh_authorized_keys:
+                return
+            now = time.monotonic()
+            if not force and now - last_ssh_sync < ssh_sync_interval:
+                return
+            last_ssh_sync = now
+            try:
+                changed, key_count = sync_authorized_keys(
+                    registry,
+                    ssh_authorized_keys,
+                    timeout=min(20, int(config.get("request_timeout", 35))),
+                )
+                if force or changed:
+                    print(
+                        json_dumps(
+                            {
+                                "event": "agent.ssh_keys_synced",
+                                "device_id": device_id,
+                                "authorized_keys": ssh_authorized_keys,
+                                "key_count": key_count,
+                                "changed": changed,
+                            }
+                        ),
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(
+                    json_dumps(
+                        {
+                            "event": "agent.ssh_keys_sync_error",
+                            "device_id": device_id,
+                            "error": str(exc)[:500],
+                        }
+                    ),
+                    flush=True,
+                )
+
+        maybe_sync_ssh_keys(force=True)
+
         while True:
+            maybe_sync_ssh_keys()
             query = urlencode({"device_id": device_id, "agent_id": agent_id, "wait": int(config.get("wait_seconds", 20))})
             path = f"/v3/jobs/claim?{query}"
             headers = identity.sign_headers(device_id, "GET", path, b"")
@@ -246,7 +292,6 @@ def main() -> None:
         if devspace:
             devspace.close()
         lock.release()
-
 
 
 def execute_job(job: dict, devspace: DevSpaceRuntime | None) -> tuple[str, int, str, dict]:
