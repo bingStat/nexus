@@ -101,6 +101,8 @@ def test_windows_installer_uses_task_scheduler_as_single_supervisor() -> None:
     assert "WshShell.Run" not in installer
     assert ":restart" not in installer
     assert "timeout /t" not in installer
+    assert "$clusterColor = if" in installer
+    assert "-ForegroundColor (if" not in installer
 
 
 def test_v3_installers_are_separate_from_legacy_services() -> None:
@@ -128,7 +130,9 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "device.key" in installer
     assert "identity_key" not in installer
     assert "NEXUS_IDENTITY" not in installer
-    assert "OnUnitActiveSec" not in installer
+    assert "nexus-functional-watchdog" in installer
+    assert "NEXUS_INSTALL_FUNCTIONAL_WATCHDOG" in installer
+    assert "nexus-v3-agent.timer" not in installer
     assert "*/5 * * * * /opt/nexus-agent/sync_ssh_authorized_keys.sh" not in installer
     assert "/api/devices/heartbeat" not in agent
     assert "/v3/devices/heartbeat" not in python_agent

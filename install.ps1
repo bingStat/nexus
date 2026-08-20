@@ -231,7 +231,8 @@ Write-Host " Registry:      $RegistryUrl"
 Write-Host " Broker:        $BrokerUrl"
 Write-Host " Device Auth:   per-device key"
 Write-Host " SSH key:       $SshKey"
-Write-Host " Cluster State: $approvalStatus" -ForegroundColor (if ($approvalStatus -match "Approved") { "Green" } else { "Yellow" })
+$clusterColor = if ($approvalStatus -match "Approved") { "Green" } else { "Yellow" }
+Write-Host " Cluster State: $approvalStatus" -ForegroundColor $clusterColor
 if ($DevSpace) {
     Write-Host " DevSpace:      Enabled (Node: $($Node.Source))" -ForegroundColor Green
     Write-Host " Allowed Roots: $($AllowedRoots -join ', ')"

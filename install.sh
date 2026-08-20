@@ -368,7 +368,47 @@ EOF
   sleep 2
   systemctl is-active --quiet "$service.service" || fail "broker service did not start"
   curl -fsS "http://127.0.0.1:$port/v3/health" >/dev/null
+  if [ "${NEXUS_INSTALL_FUNCTIONAL_WATCHDOG:-1}" = "1" ]; then
+    install_functional_watchdog "$install_dir" "$registry_url" "http://127.0.0.1:$port" "$service.service"
+  fi
   printf 'Nexus broker installed: region=%s bind=%s port=%s\n' "$region" "$bind" "$port"
+}
+
+install_functional_watchdog() {
+  install_dir="$1"
+  registry_url="$2"
+  broker_url="$3"
+  broker_service="$4"
+  copy_or_fetch deploy/nexus-functional-watchdog.sh "$install_dir/nexus-functional-watchdog.sh"
+  chmod 755 "$install_dir/nexus-functional-watchdog.sh"
+  cat > /etc/systemd/system/nexus-functional-watchdog.service <<EOF
+[Unit]
+Description=Nexus functional control-plane watchdog
+After=network-online.target nexus-v3-registry.service $broker_service nexus-v3-agent.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=NEXUS_V3_REGISTRY_URL=$registry_url
+Environment=NEXUS_V3_BROKER_URL=$broker_url
+Environment=NEXUS_WATCHDOG_BROKER_SERVICE=$broker_service
+ExecStart=$install_dir/nexus-functional-watchdog.sh
+EOF
+  cat > /etc/systemd/system/nexus-functional-watchdog.timer <<'EOF'
+[Unit]
+Description=Run Nexus functional watchdog every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now nexus-functional-watchdog.timer >/dev/null
 }
 
 install_openwrt_agent() {
