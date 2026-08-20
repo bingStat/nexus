@@ -106,16 +106,36 @@ ensure_device_ssh_key() {
 ensure_device_auth_key() {
   DEVICE_KEY_PATH="$1"
   mkdir -p "$(dirname "$DEVICE_KEY_PATH")"
-  if [ ! -s "$DEVICE_KEY_PATH" ]; then
-    umask 077
-    if command -v openssl >/dev/null 2>&1; then
-      printf 'nxk_%s\n' "$(openssl rand -hex 32)" > "$DEVICE_KEY_PATH"
-    elif command -v "$PYTHON" >/dev/null 2>&1; then
-      "$PYTHON" -c 'import secrets; print("nxk_" + secrets.token_urlsafe(32))' > "$DEVICE_KEY_PATH"
-    else
-      fail "openssl or python3 is required to create the Nexus device key"
-    fi
+  if [ -s "$DEVICE_KEY_PATH" ]; then
+    existing="$(tr -d '\r\n' < "$DEVICE_KEY_PATH")"
+    case "$existing" in
+      nxk_????????????????????????????????????*) ;;
+      *) fail "invalid existing Nexus device key: $DEVICE_KEY_PATH" ;;
+    esac
+    chmod 600 "$DEVICE_KEY_PATH"
+    return 0
   fi
+
+  umask 077
+  token=""
+  if command -v openssl >/dev/null 2>&1; then
+    token="$(openssl rand -hex 32 2>/dev/null || true)"
+    case "$token" in
+      ''|*[!0-9a-fA-F]*) token="" ;;
+    esac
+    [ "${#token}" -eq 64 ] || token=""
+  fi
+  if [ -z "$token" ] && [ -n "${PYTHON:-}" ] && command -v "$PYTHON" >/dev/null 2>&1; then
+    token="$("$PYTHON" -c 'import secrets; print(secrets.token_hex(32))')"
+  fi
+  if [ -z "$token" ] && command -v dd >/dev/null 2>&1 && command -v sha256sum >/dev/null 2>&1; then
+    random_file="${DEVICE_KEY_PATH}.random.$$"
+    dd if=/dev/urandom of="$random_file" bs=64 count=1 >/dev/null 2>&1 || fail "failed to read /dev/urandom"
+    token="$(sha256sum "$random_file" | awk '{print $1}')"
+    rm -f "$random_file"
+  fi
+  [ "${#token}" -eq 64 ] || fail "unable to create a secure Nexus device key"
+  printf 'nxk_%s\n' "$token" > "$DEVICE_KEY_PATH"
   chmod 600 "$DEVICE_KEY_PATH"
 }
 
