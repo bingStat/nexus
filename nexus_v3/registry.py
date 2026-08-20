@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .common import json_dumps, read_json, utc_now, verify_registration_payload
+from .common import device_key_hash, json_dumps, read_json, utc_now, validate_device_key
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 DEVICE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 SSH_PUBLIC_KEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/=]+(?: .*)?$")
 
@@ -73,7 +73,8 @@ class RegistryStore:
         device_id = str(payload.get("device_id") or "").strip().lower()
         if not DEVICE_RE.match(device_id):
             raise ValueError("invalid device_id")
-        verify_registration_payload(payload)
+        device_key = validate_device_key(str(payload.get("device_key") or ""))
+        auth_hash = device_key_hash(device_key)
         ssh_public_key = str(payload.get("ssh_public_key") or "").strip()
         if ssh_public_key and not SSH_PUBLIC_KEY_RE.match(ssh_public_key):
             raise ValueError("invalid ssh_public_key")
@@ -85,7 +86,7 @@ class RegistryStore:
             row = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
             status = "pending"
             approved_at = None
-            if row and row["key_id"] == payload["key_id"] and row["status"] == "approved":
+            if row and row["status"] == "approved" and row["key_id"] == auth_hash:
                 status = "approved"
                 approved_at = row["approved_at"]
             db.execute(
@@ -108,8 +109,8 @@ class RegistryStore:
                 """,
                 (
                     device_id,
-                    payload["key_id"],
-                    payload["public_key_ed25519"],
+                    auth_hash,
+                    "",
                     ssh_public_key,
                     str(payload.get("hostname") or ""),
                     str(payload.get("platform") or ""),
@@ -222,12 +223,16 @@ class Handler(BaseHTTPRequestHandler):
                 auth_admin(self)
                 query = dict(item.split("=", 1) for item in parsed.query.split("&") if "=" in item)
                 return self.send_json(200, {"devices": self.store.list(query.get("status"))})
-            match = re.fullmatch(r"/v3/devices/([^/]+)/public-key", parsed.path)
+            match = re.fullmatch(r"/v3/devices/([^/]+)/auth-key-hash", parsed.path)
             if match:
-                row = self.store.get(match.group(1).lower(), include_key=True)
+                row = self.store.get(match.group(1).lower(), include_key=False)
                 if row["status"] != "approved":
                     return self.send_json(403, {"error": "device_not_approved"})
-                return self.send_json(200, row)
+                return self.send_json(200, {"device_id": row["device_id"], "key_id": row["key_id"], "status": row["status"]})
+            match = re.fullmatch(r"/v3/admin/devices/([^/]+)", parsed.path)
+            if match:
+                auth_admin(self)
+                return self.send_json(200, self.store.get(match.group(1).lower(), include_key=False))
             self.send_json(404, {"error": "not_found"})
         except PermissionError as exc:
             self.send_json(403, {"error": str(exc)})

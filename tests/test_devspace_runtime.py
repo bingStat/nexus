@@ -7,7 +7,7 @@ from unittest import mock
 
 from nexus_v3 import agent, remote_control
 from nexus_v3.broker import BrokerStore
-from nexus_v3.common import Identity, verify_registration_payload
+from nexus_v3.common import Identity
 
 
 class FakeDevSpace:
@@ -34,18 +34,18 @@ def test_broker_supports_structured_workspace_jobs_and_legacy_shell() -> None:
         assert shell_job["input"] == {"command": "uptime"}
 
 
-def test_agent_registration_capabilities_are_signed() -> None:
+def test_agent_registration_capabilities_include_device_key() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        identity = Identity(Path(tmp) / "id", Path(tmp) / "id.pub")
+        identity = Identity(Path(tmp) / "device.key")
         payload = agent.registration_with_capabilities(
             identity,
             "victus",
             "victus",
             "Windows",
-            identity.public_key_pem,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest nexus-victus",
             {"runtime": "devspace", "devspace_version": "1.0.6"},
         )
-        verify_registration_payload(payload)
+        assert payload["device_key"] == identity.key
         assert payload["capabilities"]["runtime"] == "devspace"
 
 
@@ -69,7 +69,7 @@ def test_workspace_operation_never_uses_managed_target_fallback(monkeypatch) -> 
 
     def fake_request_json(method: str, url: str, body=None):
         requested.append((method, url, body))
-        if "/v3/devices/n1/public-key" in url:
+        if "/v3/admin/devices/n1" in url:
             return 200, {"device_id": "n1", "capabilities": {"runtime": "shell"}}
         raise AssertionError(url)
 

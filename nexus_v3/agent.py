@@ -12,11 +12,12 @@ from urllib.parse import urlencode
 
 import requests
 
-from .common import Identity, b64url, canonical_registration_message, json_dumps
+from .common import Identity, json_dumps
 from .devspace_runtime import DevSpaceRuntime
 from .ledger import ExecutionLedger
+from .ssh_fleet import sync_authorized_keys
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 
 class SingleInstanceLock:
@@ -160,9 +161,7 @@ def registration_with_capabilities(
     capabilities: dict,
 ) -> dict:
     payload = identity.registration_payload(device_id, hostname, platform_name, VERSION, ssh_public_key)
-    payload.pop("proof", None)
     payload["capabilities"] = capabilities
-    payload["proof"] = b64url(identity.private_key.sign(canonical_registration_message(payload)))
     return payload
 
 
@@ -186,10 +185,7 @@ def main() -> None:
         device_id = str(config["device_id"]).strip().lower()
         registry = str(config["registry_url"]).rstrip("/")
         broker = str(config["broker_url"]).rstrip("/")
-        identity = Identity(
-            Path(config.get("identity_key", "/etc/nexus-agent/identity_ed25519")),
-            Path(config.get("identity_public_key", "/etc/nexus-agent/identity_ed25519.pub")),
-        )
+        identity = Identity(Path(config.get("device_key", "/etc/nexus-agent/device.key")))
         agent_id = f"{device_id}:{socket.gethostname()}:{os.getpid()}"
         devspace, capabilities = load_devspace_runtime(config)
         ledger_path = Path(config.get("execution_ledger") or (cfg_path.parent / "execution-ledger.db"))
@@ -218,7 +214,7 @@ def main() -> None:
                     "event": "agent.registered",
                     "device_id": device_id,
                     "status": registration_payload.get("status", "unknown"),
-                    "key_id": identity.key_id,
+                    "auth_key_hash": identity.key_id,
                     "runtime": capabilities.get("runtime"),
                     "devspace_version": capabilities.get("devspace_version"),
                 }
@@ -226,10 +222,56 @@ def main() -> None:
             flush=True,
         )
 
+        ssh_authorized_keys = str(config.get("ssh_authorized_keys") or "").strip()
+        ssh_sync_interval = max(60, int(config.get("ssh_sync_interval") or 300))
+        last_ssh_sync = 0.0
+
+        def maybe_sync_ssh_keys(force: bool = False) -> None:
+            nonlocal last_ssh_sync
+            if not ssh_authorized_keys:
+                return
+            now = time.monotonic()
+            if not force and now - last_ssh_sync < ssh_sync_interval:
+                return
+            last_ssh_sync = now
+            try:
+                changed, key_count = sync_authorized_keys(
+                    registry,
+                    ssh_authorized_keys,
+                    timeout=min(20, int(config.get("request_timeout", 35))),
+                )
+                if force or changed:
+                    print(
+                        json_dumps(
+                            {
+                                "event": "agent.ssh_keys_synced",
+                                "device_id": device_id,
+                                "authorized_keys": ssh_authorized_keys,
+                                "key_count": key_count,
+                                "changed": changed,
+                            }
+                        ),
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(
+                    json_dumps(
+                        {
+                            "event": "agent.ssh_keys_sync_error",
+                            "device_id": device_id,
+                            "error": str(exc)[:500],
+                        }
+                    ),
+                    flush=True,
+                )
+
+        maybe_sync_ssh_keys(force=True)
+
         while True:
+            maybe_sync_ssh_keys()
             query = urlencode({"device_id": device_id, "agent_id": agent_id, "wait": int(config.get("wait_seconds", 20))})
             path = f"/v3/jobs/claim?{query}"
-            headers = identity.sign_headers(device_id, "GET", path, b"")
+            headers = identity.auth_headers(device_id)
             try:
                 code, job = request_json("GET", broker + path, headers=headers, timeout=int(config.get("request_timeout", 35)))
                 if code == 204:
@@ -313,7 +355,7 @@ def execute_and_complete(
         "result": result,
     }
     body = json_dumps(payload).encode("utf-8")
-    headers = identity.sign_headers(device_id, "POST", "/v3/jobs/complete", body)
+    headers = identity.auth_headers(device_id)
     headers["Content-Type"] = "application/json"
     code, response_payload = request_json(
         "POST",

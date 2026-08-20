@@ -31,7 +31,7 @@ function Test-RuntimePython([string]$Path) {
 }
 $Python = Get-Python
 New-Item -ItemType Directory -Force -Path "$InstallDir\nexus_v3", "$InstallDir\logs" | Out-Null
-foreach ($file in @("__init__.py","common.py","agent.py","devspace_runtime.py","ledger.py")) {
+foreach ($file in @("__init__.py","common.py","agent.py","devspace_runtime.py","ledger.py","ssh_fleet.py")) {
     Invoke-WebRequest -UseBasicParsing "$SourceBase/nexus_v3/$file" -OutFile "$InstallDir\nexus_v3\$file"
 }
 
@@ -43,8 +43,46 @@ if (-not (Test-RuntimePython $RuntimePython)) {
         throw "Failed to create a usable Nexus Python runtime"
     }
 }
-& $RuntimePython -m pip install --disable-pip-version-check --quiet requests cryptography
+& $RuntimePython -m pip install --disable-pip-version-check --quiet requests
 if ($LASTEXITCODE -ne 0) { throw "Failed to install Nexus Python dependencies" }
+
+$SshDir = Join-Path $env:USERPROFILE ".ssh"
+$SshKey = Join-Path $SshDir ("id_ed25519_{0}" -f $DeviceId.ToLowerInvariant())
+$SshPub = "$SshKey.pub"
+$SshAuthorizedKeys = Join-Path $SshDir "authorized_keys"
+New-Item -ItemType Directory -Force -Path $SshDir | Out-Null
+$SshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
+if (-not $SshKeygen) { throw "OpenSSH ssh-keygen is required" }
+
+if (-not (Test-Path $SshKey)) {
+    $SourceSshKey = $env:NEXUS_SSH_SOURCE_KEY
+    if (-not $SourceSshKey) {
+        $generic = Join-Path $SshDir "id_ed25519"
+        if (Test-Path $generic) { $SourceSshKey = $generic }
+    }
+    if ($SourceSshKey -and (Test-Path $SourceSshKey)) {
+        Move-Item -LiteralPath $SourceSshKey -Destination $SshKey
+        if (Test-Path "$SourceSshKey.pub") { Move-Item -LiteralPath "$SourceSshKey.pub" -Destination $SshPub }
+    } else {
+        & $SshKeygen.Source -q -t ed25519 -N "" -C "nexus-$($DeviceId.ToLowerInvariant())@$env:COMPUTERNAME" -f $SshKey
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create the per-device SSH key: $SshKey" }
+    }
+}
+if (-not (Test-Path $SshPub)) {
+    $publicBody = (& $SshKeygen.Source -y -f $SshKey).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $publicBody) { throw "Failed to derive SSH public key: $SshPub" }
+    [System.IO.File]::WriteAllText($SshPub, "$publicBody nexus-$($DeviceId.ToLowerInvariant())@$env:COMPUTERNAME`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+
+$DeviceKey = "$InstallDir\device.key"
+if (-not (Test-Path $DeviceKey)) {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    $hex = -join ($bytes | ForEach-Object { $_.ToString("x2") })
+    [System.IO.File]::WriteAllText($DeviceKey, "nxk_$hex`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+Remove-Item "$InstallDir\identity_ed25519", "$InstallDir\identity_ed25519.pub" -Force -ErrorAction SilentlyContinue
 
 $DevSpace = $null
 $Node = Get-Command node -ErrorAction SilentlyContinue
@@ -72,10 +110,11 @@ $Config = [ordered]@{
     device_id = $DeviceId.ToLowerInvariant()
     registry_url = $RegistryUrl.TrimEnd('/')
     broker_url = $BrokerUrl.TrimEnd('/')
-    identity_key = "$InstallDir\identity_ed25519"
-    identity_public_key = "$InstallDir\identity_ed25519.pub"
-    ssh_private_key = "$InstallDir\identity_ed25519"
-    ssh_public_key = "$InstallDir\identity_ed25519.pub"
+    device_key = $DeviceKey
+    ssh_private_key = $SshKey
+    ssh_public_key = $SshPub
+    ssh_authorized_keys = $SshAuthorizedKeys
+    ssh_sync_interval = 300
     wait_seconds = 20; poll_seconds = 1; request_timeout = 35
     execution_ledger = "$InstallDir\execution-ledger.db"
 }
@@ -180,12 +219,6 @@ if ($AdminKey) {
     } catch {}
 }
 
-$keyId = "Unknown"
-if (Test-Path "$InstallDir\identity_ed25519.pub") {
-    $pubText = (Get-Content "$InstallDir\identity_ed25519.pub" -Raw).Trim()
-    $keyId = if ($pubText.Length -gt 24) { $pubText.Substring(0, 24) + "..." } else { $pubText }
-}
-
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "        Nexus v3 Agent Installed Successfully                  " -ForegroundColor Green
@@ -196,6 +229,8 @@ Write-Host " Install Dir:   $InstallDir"
 Write-Host " Startup:       Task Scheduler\NexusV3Agent (single supervisor)"
 Write-Host " Registry:      $RegistryUrl"
 Write-Host " Broker:        $BrokerUrl"
+Write-Host " Device Auth:   per-device key"
+Write-Host " SSH key:       $SshKey"
 Write-Host " Cluster State: $approvalStatus" -ForegroundColor (if ($approvalStatus -match "Approved") { "Green" } else { "Yellow" })
 if ($DevSpace) {
     Write-Host " DevSpace:      Enabled (Node: $($Node.Source))" -ForegroundColor Green

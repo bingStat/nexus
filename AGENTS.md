@@ -8,7 +8,7 @@ Nexus has one production path:
 
 - Do not preserve obsolete compatibility paths. Remove them.
 - Never reintroduce Supabase as a task queue or Agent transport.
-- Never add shared fleet tokens to Agents; device identity is Ed25519.
+- Never add shared fleet tokens to Agents; each Agent uses its own opaque per-device authentication key, stored locally and hashed in the Registry.
 - Never support `all`, `broadcast`, fuzzy target aliases, or target substitution.
 - Network/Broker failover may change transport only; it must never change `target_device`.
 - Registry owns identity, approval, and SSH public keys only.

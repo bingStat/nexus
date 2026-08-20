@@ -92,7 +92,7 @@ def test_installers_keep_v3_identity_and_devspace_boundaries() -> None:
     assert "restarting in 5 seconds" not in windows
     assert "schtasks.exe /Create" not in windows
     assert "$env:USERPROFILE\\.nexus-agent" in windows
-    assert "identity_ed25519" in windows and "execution-ledger.db" in windows
+    assert "device.key" in windows and "execution-ledger.db" in windows
     assert "/v3/devices/heartbeat" not in openwrt
     assert "NEXUS_HEARTBEAT_SECONDS" not in openwrt
     assert '"capabilities":{"runtime":"shell"}' in openwrt

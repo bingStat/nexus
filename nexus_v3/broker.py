@@ -5,7 +5,6 @@ from contextlib import contextmanager
 import json
 import os
 import sqlite3
-import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -16,9 +15,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
 
-from .common import json_dumps, read_json, utc_now, verify_http_signature
+from .common import json_dumps, read_json, utc_now, verify_device_key
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 TERMINAL = {"completed", "failed", "timeout"}
 
 
@@ -261,38 +260,19 @@ class BrokerStore:
         return [self.normalize(row) for row in rows]
 
 
-class ReplayGuard:
-    def __init__(self, ttl_seconds: int = 600):
-        self.ttl_seconds = ttl_seconds
-        self._seen: dict[tuple[str, str], float] = {}
-        self._lock = threading.Lock()
-
-    def accept(self, device_id: str, nonce: str) -> None:
-        now = time.time()
-        key = (device_id, nonce)
-        with self._lock:
-            expired = [item for item, seen_at in self._seen.items() if now - seen_at > self.ttl_seconds]
-            for item in expired:
-                self._seen.pop(item, None)
-            if key in self._seen:
-                raise PermissionError("signature nonce already used")
-            self._seen[key] = now
-
-
 def admin_ok(handler: BaseHTTPRequestHandler) -> bool:
     expected = os.getenv("NEXUS_V3_ADMIN_KEY", "")
     return not expected or handler.headers.get("X-Nexus-Admin-Key") == expected
 
 
-def fetch_public_key(device_id: str) -> str:
+def fetch_device_key_hash(device_id: str) -> str:
     registry = os.getenv("NEXUS_V3_REGISTRY_URL", "http://127.0.0.1:18101").rstrip("/")
-    with urlopen(f"{registry}/v3/devices/{device_id}/public-key", timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))["public_key_ed25519"]
+    with urlopen(f"{registry}/v3/devices/{device_id}/auth-key-hash", timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))["key_id"]
 
 
 class Handler(BaseHTTPRequestHandler):
     store: BrokerStore
-    replay_guard = ReplayGuard()
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(
@@ -308,18 +288,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def signed_device(self, body: bytes) -> str:
-        parsed = urlparse(self.path)
-        path_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    def authenticated_device(self) -> str:
         headers = {key: value for key, value in self.headers.items()}
         device_id = str(headers.get("X-Nexus-Device") or "").strip().lower()
         try:
-            public_key = fetch_public_key(device_id)
+            key_hash = fetch_device_key_hash(device_id)
         except (HTTPError, URLError, TimeoutError) as exc:
             raise PermissionError(f"registry lookup failed for {device_id}: {exc}") from exc
-        verified_device = verify_http_signature(public_key, headers, self.command, path_query, body)
-        self.replay_guard.accept(verified_device, str(headers.get("X-Nexus-Nonce") or ""))
-        return verified_device
+        return verify_device_key(key_hash, headers)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -347,7 +323,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200, self.store.get(job_id))
                 return self.send_json(200, {"jobs": self.store.list(int(query.get("limit", ["50"])[0] or 50))})
             if parsed.path == "/v3/jobs/claim":
-                device_id = self.signed_device(b"")
+                device_id = self.authenticated_device()
                 query = parse_qs(parsed.query)
                 lease_owner = query.get("agent_id", [device_id])[0]
                 self.store.touch_presence(device_id, lease_owner)
@@ -379,7 +355,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(403, {"error": "admin auth failed"})
                 return self.send_json(201, self.store.submit(read_json(body)))
             if parsed.path == "/v3/jobs/complete":
-                device_id = self.signed_device(body)
+                device_id = self.authenticated_device()
                 return self.send_json(200, self.store.complete(read_json(body), device_id))
             self.send_json(404, {"error": "not_found"})
         except ValueError as exc:

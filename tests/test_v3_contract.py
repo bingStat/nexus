@@ -7,39 +7,32 @@ from unittest import mock
 import pytest
 
 from nexus_v3 import agent as v3_agent
-from nexus_v3.common import Identity, verify_http_signature, verify_registration_payload
+from nexus_v3.common import Identity, device_key_hash, verify_device_key
 from nexus_v3.registry import SSH_PUBLIC_KEY_RE
 
 
-def test_v3_registration_and_http_signature_round_trip() -> None:
+def test_v3_registration_and_device_key_round_trip() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        private_key = Path(tmp) / "identity_ed25519"
-        public_key = Path(tmp) / "identity_ed25519.pub"
-        identity = Identity(private_key, public_key)
-        registration = identity.registration_payload("n1", "openwrt", "openwrt", "3.0.1-test", identity.public_key_pem)
+        identity = Identity(Path(tmp) / "device.key")
+        registration = identity.registration_payload(
+            "n1", "openwrt", "openwrt", "3.2.0-test",
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest nexus-n1",
+        )
+        assert registration["device_key"] == identity.key
+        assert device_key_hash(identity.key) == identity.key_id
+        assert registration["ssh_public_key"].startswith("ssh-ed25519 ")
 
-        verify_registration_payload(registration)
-
-        body = b'{"id":"job-1","status":"completed","exit_code":0,"output":"ok"}'
-        headers = identity.sign_headers("n1", "POST", "/v3/jobs/complete", body)
-        device_id = verify_http_signature(identity.public_key_pem, headers, "POST", "/v3/jobs/complete", body)
-
-        assert device_id == "n1"
-        assert registration["key_id"] == identity.key_id
-        assert registration["public_key_ed25519"].startswith("ssh-ed25519 ")
-        assert registration["ssh_public_key"] == registration["public_key_ed25519"]
+        headers = identity.auth_headers("n1")
+        assert verify_device_key(identity.key_id, headers) == "n1"
 
 
-def test_v3_rejects_stale_signature_timestamp() -> None:
+def test_v3_rejects_wrong_device_key() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        identity = Identity(Path(tmp) / "identity_ed25519", Path(tmp) / "identity_ed25519.pub")
-        body = b""
-        headers = identity.sign_headers("n1", "GET", "/v3/jobs/claim", body)
-        headers["X-Nexus-Timestamp"] = "2000-01-01T00:00:00Z"
-
-        with pytest.raises(PermissionError, match="outside allowed window"):
-            verify_http_signature(identity.public_key_pem, headers, "GET", "/v3/jobs/claim", body)
-
+        identity = Identity(Path(tmp) / "device.key")
+        other = Identity(Path(tmp) / "other.key")
+        headers = other.auth_headers("n1")
+        with pytest.raises(PermissionError, match="authentication failed"):
+            verify_device_key(identity.key_id, headers)
 
 def test_agent_command_argv_uses_platform_shell() -> None:
     if v3_agent.os.name == "nt":
@@ -107,7 +100,9 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "sync_ssh_authorized_keys.sh" in installer
     assert "sync-cluster-ssh" in installer
     assert "trigger_cluster_ssh_sync" in installer
-    assert "identity_ed25519" in installer
+    assert "device.key" in installer
+    assert "identity_key" not in installer
+    assert "NEXUS_IDENTITY" not in installer
     assert "OnUnitActiveSec" not in installer
     assert "*/5 * * * * /opt/nexus-agent/sync_ssh_authorized_keys.sh" not in installer
     assert "/api/devices/heartbeat" not in agent
@@ -116,8 +111,9 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert '"$BROKER_URL/claim' not in agent
     assert "require_success" in python_agent
     assert "subprocess.TimeoutExpired" in python_agent
-    assert "ReplayGuard" in broker
-    assert "signature nonce already used" in broker
+    assert "verify_device_key" in broker
+    assert "ReplayGuard" not in broker
+    assert "X-Nexus-Signature" not in broker
 
 
 def test_ssh_public_key_contract() -> None:

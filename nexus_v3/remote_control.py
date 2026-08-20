@@ -192,7 +192,7 @@ def list_devices(status: str = "approved") -> dict[str, Any]:
 
 def get_device(device_id: str) -> dict[str, Any]:
     device = device_id.strip().lower()
-    code, payload = request_json("GET", f"{registry_url()}/v3/devices/{device}/public-key")
+    code, payload = request_json("GET", f"{registry_url()}/v3/admin/devices/{device}")
     row = require_success(code, payload, {200})
     region = resolve_region(device)
     try:
