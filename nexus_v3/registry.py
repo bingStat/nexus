@@ -220,14 +220,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"devices": self.store.list(query.get("status"))})
             match = re.fullmatch(r"/v3/devices/([^/]+)/auth-key-hash", parsed.path)
             if match:
-                row = self.store.get(match.group(1).lower(), include_key=False)
+                row = self.store.get(match.group(1).lower())
                 if row["status"] != "approved":
                     return self.send_json(403, {"error": "device_not_approved"})
                 return self.send_json(200, {"device_id": row["device_id"], "key_id": row["key_id"], "status": row["status"]})
             match = re.fullmatch(r"/v3/admin/devices/([^/]+)", parsed.path)
             if match:
                 auth_admin(self)
-                return self.send_json(200, self.store.get(match.group(1).lower(), include_key=False))
+                return self.send_json(200, self.store.get(match.group(1).lower()))
             self.send_json(404, {"error": "not_found"})
         except PermissionError as exc:
             self.send_json(403, {"error": str(exc)})
