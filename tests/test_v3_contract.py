@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -8,7 +9,7 @@ import pytest
 
 from nexus_v3 import agent as v3_agent
 from nexus_v3.common import Identity, device_key_hash, verify_device_key
-from nexus_v3.registry import SSH_PUBLIC_KEY_RE
+from nexus_v3.registry import RegistryStore, SSH_PUBLIC_KEY_RE
 
 
 def test_v3_registration_and_device_key_round_trip() -> None:
@@ -24,6 +25,25 @@ def test_v3_registration_and_device_key_round_trip() -> None:
 
         headers = identity.auth_headers("n1")
         assert verify_device_key(identity.key_id, headers) == "n1"
+
+
+def test_registry_schema_has_no_legacy_signing_public_key() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "registry.db"
+        store = RegistryStore(db_path)
+        with sqlite3.connect(db_path) as db:
+            columns = {row[1] for row in db.execute("PRAGMA table_info(devices)").fetchall()}
+        assert "public_key_ed25519" not in columns
+
+        identity = Identity(Path(tmp) / "device.key")
+        row = store.register(
+            identity.registration_payload(
+                "test-node", "test-host", "linux", "3.2.1-test",
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest nexus-test",
+            )
+        )
+        assert row["key_id"] == identity.key_id
+        assert "public_key_ed25519" not in row
 
 
 def test_v3_rejects_wrong_device_key() -> None:

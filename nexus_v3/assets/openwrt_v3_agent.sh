@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-AGENT_VERSION="3.2.0-openwrt"
+AGENT_VERSION="3.2.1-openwrt"
 CONFIG_FILE="${NEXUS_V3_CONFIG:-/etc/nexus-agent/v3.env}"
 [ -r "$CONFIG_FILE" ] || { echo "missing config: $CONFIG_FILE" >&2; exit 1; }
 . "$CONFIG_FILE"

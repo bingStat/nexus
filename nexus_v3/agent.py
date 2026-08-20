@@ -17,7 +17,7 @@ from .devspace_runtime import DevSpaceRuntime
 from .ledger import ExecutionLedger
 from .ssh_fleet import sync_authorized_keys
 
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 
 
 class SingleInstanceLock:

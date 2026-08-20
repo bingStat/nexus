@@ -1,42 +1,52 @@
 # Device identity and authentication
 
-## Agent identity
+## Agent device key
 
-Every v3 Agent owns one local Ed25519 keypair. Registry stores the public key, key fingerprint, canonical device metadata and approval status; private keys never leave the device.
+Every Nexus v3 Agent owns one opaque random device key. The key is a bearer credential used only for Nexus Agent authentication; it is not an SSH keypair. The Registry stores only its SHA-256 hash (`key_id`) together with canonical device metadata and approval state. The plaintext device key stays on the device.
 
-| Platform | Private key | Configuration |
+| Platform | Device key | Agent configuration |
 | --- | --- | --- |
-| Linux/systemd | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/v3.json` |
-| Windows | `%LOCALAPPDATA%\NexusAgentV3\identity_ed25519` | `%LOCALAPPDATA%\NexusAgentV3\v3.json` |
-| VSC/user-local | `~/.local/nexus-agent-v3/identity_ed25519` | `~/.config/nexus-agent/v3.json` |
-| OpenWrt | `/etc/nexus-agent/identity_ed25519` | `/etc/nexus-agent/v3.env` |
+| Linux/systemd | `/etc/nexus-agent/device.key` | `/etc/nexus-agent/v3.json` |
+| Windows | `%LOCALAPPDATA%\NexusAgentV3\device.key` | `%LOCALAPPDATA%\NexusAgentV3\v3.json` |
+| VSC production | `/vsc-hard-mounts/leuven-data/356/vsc35603/services/nexus-agent-v3/device.key` | same persistent service directory |
+| OpenWrt | `/etc/nexus-agent/device.key` | `/etc/nexus-agent/v3.env` |
 
-A public key is an identity, not a bearer token. Claim and completion requests require proof from the corresponding private key.
+Registration sends the device key once to Registry over the configured transport. Registry derives `sha256:<digest>` and never stores the plaintext. Approved devices remain approved only when the presented key hashes to the existing `key_id`; a changed key returns the device to `pending`.
 
-## Signed requests
+## Agent requests
+
+Agent-to-Broker requests use only these authentication headers:
 
 ```text
 X-Nexus-Device
-X-Nexus-Key-Id
-X-Nexus-Timestamp
-X-Nexus-Nonce
-X-Nexus-Signature
+X-Nexus-Device-Key
 ```
 
-The signature covers HTTP method, path/query, timestamp, nonce, canonical device ID and SHA-256 body hash. Broker verifies approved identity, key ID, a 300-second timestamp window and nonce replay protection.
+Broker resolves the approved device in Registry and compares the SHA-256 hash of the presented key with the stored `key_id` using constant-time comparison. The retired Ed25519 signing protocol, public signing keys, timestamps, nonces and signature headers are not part of v3.2.1.
 
 New registrations are `pending`; an administrator must explicitly approve them before they can claim jobs.
+
 ## SSH trust
 
-The Nexus device public key can also populate the managed SSH block distributed by Registry. Sync changes only the `### BEGIN/END NEXUS MANAGED SSH KEYS` section; it must not rewrite unrelated `authorized_keys` entries. VSC inbound SSH remains subject to KU Leuven certificate policy and is not bypassed by Nexus keys.
+SSH is a separate trust domain. Every device keeps its own SSH private key locally, normally named `id_ed25519_<device>`. Registry stores only each approved device's SSH **public** key and exposes the canonical fleet set at `/v3/ssh/authorized-keys`.
+
+Agents periodically replace only the bounded block below and preserve all unrelated `authorized_keys` content:
+
+```text
+### BEGIN NEXUS MANAGED SSH KEYS
+... approved fleet public keys ...
+### END NEXUS MANAGED SSH KEYS
+```
+
+Linux uses the target user's `~/.ssh/authorized_keys`; OpenWrt uses `/etc/dropbear/authorized_keys`. Private SSH keys are never centralized or copied between devices. VSC inbound SSH remains subject to KU Leuven network/login-node policy.
 
 ## Human login authentication
 
-Human passwords are a separate trust domain from Agent identity:
+Human passwords are separate from Agent authentication:
 
 - **Bitwarden Password Manager** is authoritative for human-facing logins such as Nexus Dashboard, VSC/code-server and OpenList.
 - **Bitwarden Secrets Manager** is reserved for machine/API credentials such as Cloudflare/R2 tokens, Nexus service keys and automation credentials.
 - Nexus Dashboard uses a Cloudflare Worker runtime secret copy of the Password Manager value and issues a `__Host-nexus_session` HttpOnly, Secure, SameSite=Strict cookie.
-- VSC code-server stores only an Argon2 hash locally through `HASHED_PASSWORD`; the plaintext is not kept in BSM or on VSC.
+- VSC code-server stores only an Argon2 hash locally through `HASHED_PASSWORD`; plaintext is not kept on VSC.
 
-Do not use a shared human password as an Agent credential, and do not place Ed25519 private keys in Password Manager for convenience.
+Do not reuse a human password as a device key, and do not place SSH private keys in the central Registry.

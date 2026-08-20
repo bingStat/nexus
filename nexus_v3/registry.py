@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from .common import device_key_hash, json_dumps, read_json, utc_now, validate_device_key
 
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 DEVICE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 SSH_PUBLIC_KEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/=]+(?: .*)?$")
 
@@ -28,7 +28,6 @@ class RegistryStore:
                 CREATE TABLE IF NOT EXISTS devices (
                     device_id TEXT PRIMARY KEY,
                     key_id TEXT NOT NULL,
-                    public_key_ed25519 TEXT NOT NULL,
                     ssh_public_key TEXT NOT NULL DEFAULT '',
                     hostname TEXT NOT NULL,
                     platform TEXT NOT NULL,
@@ -92,12 +91,11 @@ class RegistryStore:
             db.execute(
                 """
                 INSERT INTO devices(
-                    device_id,key_id,public_key_ed25519,ssh_public_key,hostname,platform,
+                    device_id,key_id,ssh_public_key,hostname,platform,
                     agent_version,capabilities_json,status,created_at,updated_at,approved_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(device_id) DO UPDATE SET
                   key_id=excluded.key_id,
-                  public_key_ed25519=excluded.public_key_ed25519,
                   ssh_public_key=excluded.ssh_public_key,
                   hostname=excluded.hostname,
                   platform=excluded.platform,
@@ -110,7 +108,6 @@ class RegistryStore:
                 (
                     device_id,
                     auth_hash,
-                    "",
                     ssh_public_key,
                     str(payload.get("hostname") or ""),
                     str(payload.get("platform") or ""),
@@ -123,7 +120,7 @@ class RegistryStore:
                 ),
             )
             db.commit()
-            return self.get(device_id, include_key=False) | {"status": status}
+            return self.get(device_id) | {"status": status}
 
     def list(self, status: str | None = None) -> list[dict[str, Any]]:
         sql = (
@@ -138,13 +135,11 @@ class RegistryStore:
         with self.connect() as db:
             return [self.normalize(row) for row in db.execute(sql, args).fetchall()]
 
-    def get(self, device_id: str, include_key: bool = True) -> dict[str, Any]:
+    def get(self, device_id: str) -> dict[str, Any]:
         cols = (
             "device_id,key_id,ssh_public_key,hostname,platform,agent_version,"
             "capabilities_json,status,created_at,updated_at,approved_at"
         )
-        if include_key:
-            cols += ",public_key_ed25519"
         with self.connect() as db:
             row = db.execute(f"SELECT {cols} FROM devices WHERE device_id=?", (device_id,)).fetchone()
             if not row:
@@ -162,7 +157,7 @@ class RegistryStore:
             if cur.rowcount == 0:
                 raise KeyError(device_id)
             db.commit()
-        return self.get(device_id, include_key=False)
+        return self.get(device_id)
 
     def authorized_ssh_keys(self) -> list[dict[str, str]]:
         with self.connect() as db:

@@ -17,7 +17,7 @@ from urllib.request import urlopen
 
 from .common import json_dumps, read_json, utc_now, verify_device_key
 
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 TERMINAL = {"completed", "failed", "timeout"}
 
 

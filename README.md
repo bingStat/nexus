@@ -84,17 +84,17 @@ The repository is deliberately split by concern. The directories below are the m
 
 | File / directory | Responsibility |
 | --- | --- |
-| `registry.py` | Canonical device identity, pending/approved/revoked state, public-key directory |
+| `registry.py` | Canonical device-key hashes, pending/approved/revoked state and SSH public-key directory |
 | `broker.py` | Regional job queue, idempotency, leases, result receipts and Agent presence |
-| `agent.py` | Signed registration/claim/complete loop and exact-target execution |
+| `agent.py` | Device-key-authenticated registration/claim/complete loop and exact-target execution |
 | `ledger.py` | Durable local execution ledger preventing duplicate side effects |
 | `remote_control.py` | Fleet status aggregation and remote-control service layer |
 | `chatgpt_api.py` | HTTP API used by ChatGPT/OpenAPI clients |
 | `mcp_server.py` | MCP exposure of Nexus remote-control operations |
 | `devspace_runtime.py` | Thin adapter between Nexus jobs and upstream DevSpace |
 | `status.py` | `online / degraded / offline` derivation |
-| `common.py` | Ed25519 identity, signatures, canonical request helpers and shared primitives |
-| `assets/` | Lightweight platform assets such as the OpenWrt Agent and Ed25519 signer |
+| `common.py` | Opaque device-key lifecycle, hashing, authentication headers and shared primitives |
+| `assets/` | Lightweight platform assets such as the OpenWrt Agent |
 
 ### `runtime/` — external runtime adapters
 
