@@ -31,8 +31,11 @@ def test_registry_schema_has_no_legacy_signing_public_key() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "registry.db"
         store = RegistryStore(db_path)
-        with sqlite3.connect(db_path) as db:
+        db = sqlite3.connect(db_path)
+        try:
             columns = {row[1] for row in db.execute("PRAGMA table_info(devices)").fetchall()}
+        finally:
+            db.close()
         assert "public_key_ed25519" not in columns
 
         identity = Identity(Path(tmp) / "device.key")

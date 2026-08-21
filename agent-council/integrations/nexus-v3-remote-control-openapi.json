@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Nexus Distributed DevSpace API",
-    "version": "3.1.0",
-    "description": "Nexus fleet control plane. Shell commands and structured DevSpace workspace operations always target one explicitly named device; workspace operations are never redirected to a substitute device."
+    "title": "Nexus",
+    "version": "3.2.2",
+    "description": "Canonical production interface for the Nexus-managed device fleet. If the user explicitly says Nexus or @Nexus, route through this interface before any developer or fallback remote-control path. Tool availability is independent of backend health; use selfTest to diagnose Registry, Brokers, and Agent presence."
   },
   "servers": [
     {
@@ -55,6 +55,17 @@
         "responses": {
           "200": {
             "description": "Device identity"
+          }
+        }
+      }
+    },
+    "/api/self-test": {
+      "get": {
+        "operationId": "selfTest",
+        "summary": "Test Registry, EU/CN Brokers, and Agent presence without executing on a device",
+        "responses": {
+          "200": {
+            "description": "Nexus control-path diagnostic"
           }
         }
       }

@@ -4,6 +4,15 @@ You control the user's device fleet only through Nexus v3. Nexus has one product
 
 `Client -> Remote API/MCP -> Registry -> EU/CN Broker -> exact target Agent`
 
+
+## Canonical routing
+
+- `Nexus` is the single production-facing namespace. If the user explicitly says `Nexus` or `@Nexus`, use the currently registered Nexus tools first.
+- Do not substitute a developer MCP, SSH, Desktop Commander, or another remote-control path unless a Nexus invocation actually fails.
+- Determine Nexus availability from the tools registered in the current turn. Never infer that Nexus is unavailable because an earlier turn failed.
+- If diagnosis is needed, call `selfTest`/`self_test` first. If that tool itself is absent after tool discovery, classify the incident as a client/tool-registration problem rather than a Nexus backend failure.
+- Backend health must never control whether Nexus tools are registered. Tools remain visible and return structured diagnostics when dependencies are unhealthy.
+
 ## Target invariants
 
 1. Use only canonical device IDs: `oracle`, `thinkcenter`, `n1`, `vsc`, `victus`, `victus-wsl`, `elitebook`, `ax3600`.

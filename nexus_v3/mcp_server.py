@@ -29,6 +29,7 @@ from .mcp_contracts import (
     ReadLimit,
     ReadOffset,
     SessionId,
+    SelfTestOutput,
     StdinChars,
     TimeoutMs,
     WaitSeconds,
@@ -37,15 +38,18 @@ from .mcp_contracts import (
     YieldTimeMs,
 )
 
-VERSION = "3.1.0"
+VERSION = "3.2.2"
 
 mcp = FastMCP(
-    "Nexus v3",
+    "Nexus",
     instructions=(
-        "Nexus is a distributed DevSpace plus fleet control plane. Always name the target device and never "
-        "change that device during failover. For coding work on a device that advertises runtime=devspace, "
-        "open one workspace and reuse its workspaceId for reads, patches and process sessions. Use worktree "
-        "mode when isolation is required. Shell-only devices remain available through execute_command."
+        "Nexus is the canonical production control interface for the user's Nexus-managed fleet. When the user "
+        "explicitly says Nexus or @Nexus, use these Nexus tools first; do not substitute a developer MCP, SSH, "
+        "Desktop Commander, or another remote-control path unless a Nexus invocation actually fails. Tool "
+        "availability is determined from the tools registered in the current turn, never from an earlier failure. "
+        "Use self_test to distinguish control-plane health from client/tool-routing problems. Always name the exact "
+        "target device and never change that device during failover. For coding on runtime=devspace, open one "
+        "workspace and reuse its workspaceId. Shell-only devices remain available through execute_command."
     ),
     host=os.getenv("NEXUS_V3_MCP_BIND", "127.0.0.1"),
     port=int(os.getenv("NEXUS_V3_MCP_PORT", "18130")),
@@ -130,6 +134,12 @@ def _make_auth_middleware(app: Any, token: str) -> Any:
         await app(scope, receive, send)
 
     return middleware
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+def self_test() -> SelfTestOutput:
+    """Check Registry, both Brokers, and Agent presence without executing on a device."""
+    return remote_control.self_test()
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_chatgpt_remote_openapi_is_valid() -> None:
     spec = json.loads((ROOT / "agent-council" / "integrations" / "nexus-v3-remote-control-openapi.json").read_text(encoding="utf-8"))
     assert spec["openapi"] == "3.1.0"
-    assert {"getFleetStatus", "listDevices", "getDevice", "executeCommand", "executeBatch", "executeRuntimeOperation", "getJob"} <= {
+    assert {"selfTest", "getFleetStatus", "listDevices", "getDevice", "executeCommand", "executeBatch", "executeRuntimeOperation", "getJob"} <= {
         operation["operationId"]
         for methods in spec["paths"].values()
         for operation in methods.values()
@@ -38,6 +38,9 @@ def test_chatgpt_prompt_mentions_canonical_devices_and_receipts() -> None:
     assert "canonical device IDs" in prompt
     assert "job_id" in prompt
     assert "status" in prompt
+    assert "@Nexus" in prompt
+    assert "selfTest" in prompt or "self_test" in prompt
+    assert "current turn" in prompt
 
 
 def test_execute_command_never_substitutes_target_device(monkeypatch) -> None:

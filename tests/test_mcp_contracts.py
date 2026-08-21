@@ -19,7 +19,7 @@ def tool_map() -> dict[str, Any]:
 def test_every_tool_has_a_concrete_output_schema() -> None:
     tools = tool_map()
 
-    assert len(tools) == 11
+    assert len(tools) == 12
     for tool in tools.values():
         schema = tool.outputSchema
         assert schema is not None
@@ -72,7 +72,7 @@ def test_batch_defaults_are_forwarded_without_a_null_wait(monkeypatch: pytest.Mo
 
 def test_tool_risk_annotations_match_remote_side_effects() -> None:
     tools = tool_map()
-    read_only = {"list_devices", "get_device", "fleet_status", "read_workspace", "get_job"}
+    read_only = {"self_test", "list_devices", "get_device", "fleet_status", "read_workspace", "get_job"}
     destructive = {
         "execute_batch",
         "execute_command",
@@ -125,3 +125,30 @@ def test_input_schemas_publish_operational_limits() -> None:
 
     job = tools["get_job"].inputSchema["properties"]
     assert set(job["region"]["enum"]) == {"eu", "cn"}
+
+
+def test_tool_surface_is_static_across_repeated_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = set(tool_map())
+    assert "self_test" in expected
+    for _ in range(50):
+        assert set(tool_map()) == expected
+
+    def broken_backend(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("simulated backend failure")
+
+    monkeypatch.setattr(mcp_server.remote_control, "fleet_status", broken_backend)
+    for _ in range(10):
+        assert set(tool_map()) == expected
+
+
+def test_self_test_returns_structured_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "status": "degraded",
+        "service": "nexus",
+        "version": "3.2.2",
+        "components": {"registry": {"status": "unavailable"}},
+    }
+    monkeypatch.setattr(mcp_server.remote_control, "self_test", lambda: payload)
+    content, structured = asyncio.run(mcp.call_tool("self_test", {}))
+    assert content
+    assert structured == payload

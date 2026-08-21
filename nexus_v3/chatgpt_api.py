@@ -6,9 +6,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .remote_control import execute_batch, execute_command, fleet_status, get_device, get_job, list_devices, submit_operation
+from .remote_control import execute_batch, execute_command, fleet_status, get_device, get_job, list_devices, self_test, submit_operation
 
-VERSION = "3.1.0"
+VERSION = "3.2.2"
 
 
 def chatgpt_api_key() -> str:
@@ -26,11 +26,10 @@ def openapi_document() -> dict[str, Any]:
     return {
         "openapi": "3.1.0",
         "info": {
-            "title": "Nexus Distributed DevSpace API",
+            "title": "Nexus",
             "version": VERSION,
             "description": (
-                "Nexus fleet control plane. Shell commands and structured DevSpace workspace operations always "
-                "target one explicitly named device; workspace operations are never redirected to a substitute device."
+                "Canonical production interface for the Nexus-managed device fleet. If the user explicitly says Nexus or @Nexus, route through this API before any developer or fallback remote-control path. Tool availability is independent of backend health; use selfTest to diagnose the production control path. Commands and workspace operations always target one explicitly named device."
             ),
         },
         "servers": [{"url": public_base_url()}],
@@ -54,6 +53,13 @@ def openapi_document() -> dict[str, Any]:
                         {"name": "device_id", "in": "path", "required": True, "schema": {"type": "string"}}
                     ],
                     "responses": {"200": {"description": "Device identity"}},
+                }
+            },
+            "/api/self-test": {
+                "get": {
+                    "operationId": "selfTest",
+                    "summary": "Test Registry, EU/CN Brokers, and Agent presence without executing on a device",
+                    "responses": {"200": {"description": "Nexus control-path diagnostic"}},
                 }
             },
             "/api/status": {
@@ -180,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/openapi.json":
                 return self.send_json(200, openapi_document())
             self.require_auth()
+            if parsed.path == "/api/self-test":
+                return self.send_json(200, self_test())
             if parsed.path == "/api/status":
                 return self.send_json(200, fleet_status())
             if parsed.path == "/api/devices":

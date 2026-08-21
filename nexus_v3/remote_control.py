@@ -294,6 +294,43 @@ def execute_batch(jobs: list[dict[str, Any]], wait_seconds: int = 20) -> dict[st
     return {"results": results}
 
 
+
+
+def self_test() -> dict[str, Any]:
+    """Check the production control path without depending on device execution."""
+    components: dict[str, dict[str, Any]] = {}
+    overall = "ok"
+    try:
+        code, payload = request_json("GET", f"{registry_url()}/v3/admin/devices?status=approved")
+        if code == 200:
+            components["registry"] = {"status": "ok", "approved_devices": len(payload.get("devices", []))}
+        else:
+            overall = "degraded"
+            components["registry"] = {"status": "unavailable", "http_status": code}
+    except Exception as exc:
+        overall = "degraded"
+        components["registry"] = {"status": "unavailable", "error": type(exc).__name__, "detail": str(exc)[:200]}
+    for region in ("eu", "cn"):
+        try:
+            code, health = request_json("GET", f"{broker_url(region)}/v3/health")
+            if code == 200 and health.get("status") == "ok":
+                components[f"broker_{region}"] = {"status": "ok", "version": health.get("version")}
+            else:
+                overall = "degraded"
+                components[f"broker_{region}"] = {"status": "unavailable", "http_status": code}
+        except Exception as exc:
+            overall = "degraded"
+            components[f"broker_{region}"] = {"status": "unavailable", "error": type(exc).__name__, "detail": str(exc)[:200]}
+    try:
+        presence, errors = presence_map()
+        components["presence"] = {"status": "ok" if not errors else "degraded", "reachable_agents": len(presence), "errors": errors}
+        if errors:
+            overall = "degraded"
+    except Exception as exc:
+        overall = "degraded"
+        components["presence"] = {"status": "unavailable", "error": type(exc).__name__, "detail": str(exc)[:200]}
+    return {"status": overall, "service": "nexus", "version": "3.2.2", "components": components}
+
 def fleet_status() -> dict[str, Any]:
     devices = list_devices("approved").get("devices", [])
     counts = {key: 0 for key in ("online", "degraded", "offline", "unknown")}

@@ -101,3 +101,10 @@ class BatchFailureOutput(OpenOutputModel):
 
 class BatchOutput(OpenOutputModel):
     results: list[JobOutput | BatchFailureOutput]
+
+
+class SelfTestOutput(OpenOutputModel):
+    status: Literal["ok", "degraded"]
+    service: str
+    version: str
+    components: dict[str, dict[str, Any]]
