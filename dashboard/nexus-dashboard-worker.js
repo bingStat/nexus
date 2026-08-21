@@ -1128,7 +1128,9 @@ export default {
         const payload = await upstream.json();
         const devices = Array.isArray(payload) ? payload : (payload.devices || []);
         const counts = Array.isArray(payload) ? undefined : payload.counts;
-        return new Response(JSON.stringify({ source: 'nexus-chatgpt-remote', updated_at: new Date().toISOString(), devices, counts }), {
+        const brokers = Array.isArray(payload) ? undefined : payload.brokers;
+        const total = Array.isArray(payload) ? devices.length : payload.total;
+        return new Response(JSON.stringify({ source: 'nexus-chatgpt-remote', updated_at: new Date().toISOString(), devices, counts, brokers, total }), {
           headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v3 Remote Control' }),
         });
       } catch (error) {
@@ -1149,7 +1151,7 @@ export default {
     const obj = await env.NEXUS_BUCKET.get(r2Key);
     if (!obj) return new Response(`R2 object not found: ${r2Key}`, { status: 404, headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }) });
     return new Response(await obj.arrayBuffer(), {
-      headers: securityHeaders({ 'Content-Type': contentType, 'Cache-Control': 'no-cache, max-age=60', 'X-Powered-By': 'Nexus v3 Remote Control' }),
+      headers: securityHeaders({ 'Content-Type': contentType, 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v3 Remote Control' }),
     });
   },
 };

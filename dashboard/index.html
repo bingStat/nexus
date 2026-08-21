@@ -1181,6 +1181,9 @@ let activeFlows = new Set(['oracle', 'thinkcenter', 'n1']);
 let selectedNodeId = null;
 let statusSourceLabel = 'unavailable';
 let lastStatusFetchedAt = null;
+let backendCounts = null;
+let backendBrokers = null;
+let backendTotal = null;
 const LAYOUT_STORAGE_KEY = 'nexus:v3-dashboard-layout';
 let layoutPan = { x: 0, y: 0 };
 let nodePositions = {};
@@ -1272,6 +1275,9 @@ async function fetchStatusJson() {
     if (!Array.isArray(devices)) return null;
     statusSourceLabel = payload.source || 'status.json';
     lastStatusFetchedAt = payload.updated_at || new Date().toISOString();
+    backendCounts = payload.counts || null;
+    backendBrokers = payload.brokers || null;
+    backendTotal = Number.isInteger(payload.total) ? payload.total : null;
     return devices.map(normalizeDeviceRecord).filter(d => d.device_id);
 }
 
@@ -1284,6 +1290,9 @@ async function fetchDevices() {
     }
     statusSourceLabel = 'unavailable';
     lastStatusFetchedAt = new Date().toISOString();
+    backendCounts = null;
+    backendBrokers = null;
+    backendTotal = null;
     return fallbackDevicesSnapshot();
 }
 async function fetchTasks() {
@@ -1835,10 +1844,13 @@ function renderDevices(devices) {
 
     const container = document.getElementById('device-list');
     const select = document.getElementById('target-device');
-    const online = devicesData.filter(d => getDeviceVisualState(d).key === 'online').length;
-    document.getElementById('stat-total').textContent = devicesData.length;
+    const online = Number.isInteger(backendCounts?.online)
+        ? backendCounts.online
+        : devicesData.filter(d => getDeviceVisualState(d).key === 'online').length;
+    const total = Number.isInteger(backendTotal) ? backendTotal : devicesData.length;
+    document.getElementById('stat-total').textContent = total;
     document.getElementById('stat-online').textContent = online;
-    document.getElementById('node-count-badge').textContent = `${online}/${devicesData.length} Online`;
+    document.getElementById('node-count-badge').textContent = `${online}/${total} Online`;
 
     if (select) {
         const currentVal = select.value;
