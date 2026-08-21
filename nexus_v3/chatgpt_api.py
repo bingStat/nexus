@@ -159,6 +159,24 @@ def openapi_document() -> dict[str, Any]:
     }
 
 
+def dashboard_status() -> dict[str, Any]:
+    full = fleet_status()
+    allowed = {
+        "device_id", "hostname", "platform", "runtime_status", "last_seen_at",
+        "age_seconds", "broker_region", "presence_source", "roles", "capabilities",
+    }
+    devices = [
+        {key: value for key, value in row.items() if key in allowed}
+        for row in full.get("devices", []) if isinstance(row, dict)
+    ]
+    return {
+        "devices": devices,
+        "counts": full.get("counts", {}),
+        "total": full.get("total", len(devices)),
+        "brokers": full.get("brokers", {}),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -185,6 +203,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"status": "ok", "service": "nexus-chatgpt-remote", "version": VERSION})
             if parsed.path == "/openapi.json":
                 return self.send_json(200, openapi_document())
+            if parsed.path == "/api/dashboard-status":
+                return self.send_json(200, dashboard_status())
             self.require_auth()
             if parsed.path == "/api/self-test":
                 return self.send_json(200, self_test())

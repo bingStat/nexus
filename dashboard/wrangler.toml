@@ -11,4 +11,4 @@ pattern = "nexus.bings.app/*"
 zone_name = "bings.app"
 
 [vars]
-NEXUS_STATUS_SOURCE_URL = "https://nexus-global-api.bings.app/api/status"
+NEXUS_STATUS_SOURCE_URL = "https://nexus-global-api.bings.app/api/dashboard-status"

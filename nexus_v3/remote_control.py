@@ -72,7 +72,7 @@ def registry_url() -> str:
 
 def broker_url(region: str) -> str:
     key = f"NEXUS_V3_{region.upper()}_BROKER_URL"
-    default = "http://127.0.0.1:18102" if region == "eu" else "http://100.103.12.14:18120"
+    default = "http://127.0.0.1:18102" if region == "eu" else "http://100.86.0.66:18120"
     return os.getenv(key, default).rstrip("/")
 
 
@@ -107,7 +107,7 @@ def command_policy(command: str) -> None:
             raise PermissionError("command rejected by Nexus safety policy")
 
 
-def request_json(method: str, url: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
+def request_json(method: str, url: str, body: dict[str, Any] | None = None, *, timeout: float = 30) -> tuple[int, Any]:
     data = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
     request = Request(
         url,
@@ -116,7 +116,7 @@ def request_json(method: str, url: str, body: dict[str, Any] | None = None) -> t
         headers={"X-Nexus-Admin-Key": admin_key(), "Content-Type": "application/json"},
     )
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8")
             return response.status, json.loads(raw) if raw else {}
     except HTTPError as exc:
@@ -139,7 +139,7 @@ def list_agent_presence(region: str) -> dict[str, Any]:
     normalized_region = region.strip().lower()
     if normalized_region not in {"eu", "cn"}:
         raise ValueError("region must be eu or cn")
-    code, payload = request_json("GET", f"{broker_url(normalized_region)}/v3/agents")
+    code, payload = request_json("GET", f"{broker_url(normalized_region)}/v3/agents", timeout=3)
     result = require_success(code, payload, {200})
     result["broker_region"] = normalized_region
     return result
@@ -179,7 +179,7 @@ def annotate_with_presence(row: dict[str, Any], presence: dict[str, Any] | None)
 
 
 def list_devices(status: str = "approved") -> dict[str, Any]:
-    code, payload = request_json("GET", f"{registry_url()}/v3/admin/devices?{urlencode({'status': status})}")
+    code, payload = request_json("GET", f"{registry_url()}/v3/admin/devices?{urlencode({'status': status})}", timeout=3)
     result = require_success(code, payload, {200})
     presences, errors = presence_map()
     devices = []
@@ -312,7 +312,7 @@ def self_test() -> dict[str, Any]:
         components["registry"] = {"status": "unavailable", "error": type(exc).__name__, "detail": str(exc)[:200]}
     for region in ("eu", "cn"):
         try:
-            code, health = request_json("GET", f"{broker_url(region)}/v3/health")
+            code, health = request_json("GET", f"{broker_url(region)}/v3/health", timeout=3)
             if code == 200 and health.get("status") == "ok":
                 components[f"broker_{region}"] = {"status": "ok", "version": health.get("version")}
             else:
@@ -340,7 +340,7 @@ def fleet_status() -> dict[str, Any]:
     brokers = {}
     for region in ("eu", "cn"):
         try:
-            code, health = request_json("GET", f"{broker_url(region)}/v3/health")
+            code, health = request_json("GET", f"{broker_url(region)}/v3/health", timeout=3)
             brokers[region] = health if code == 200 else {"status": "offline", "http_status": code}
         except Exception as exc:
             brokers[region] = {"status": "offline", "error": type(exc).__name__}

@@ -1244,7 +1244,7 @@ function isoMinutesAgo(mins) { return new Date(Date.now() - mins * 60000).toISOS
 function fallbackDevicesSnapshot() {
     return [
         { device_id: 'oracle', name: 'Oracle', status: 'unknown', last_seen: '', ip: '100.116.89.65', roles: DEVICE_META.oracle.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
-        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'unknown', last_seen: '', ip: '100.103.12.14', roles: DEVICE_META.thinkcenter.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
+        { device_id: 'thinkcenter', name: 'ThinkCenter', status: 'unknown', last_seen: '', ip: '100.86.0.66', roles: DEVICE_META.thinkcenter.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
         { device_id: 'n1', name: 'N1', status: 'unknown', last_seen: '', ip: '100.90.67.12', roles: DEVICE_META.n1.roles, capabilities: { runtime: 'shell' } },
         { device_id: 'victus', name: 'Victus', status: 'unknown', last_seen: '', ip: '', roles: DEVICE_META.victus.roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
         { device_id: 'victus-wsl', name: 'Victus WSL', status: 'unknown', last_seen: '', ip: '', roles: DEVICE_META['victus-wsl'].roles, capabilities: { runtime: 'devspace', devspace_version: '1.0.6' } },
@@ -1958,7 +1958,7 @@ document.getElementById('cmd-input')?.addEventListener('keydown', e => { if (e.k
 // ─── POLL LOOP ───
 const geoCache = {
     '100.116.89.65': 'Amsterdam, Netherlands · public 141.148.241.88 · Tailscale 100.116.89.65',
-    '100.103.12.14': 'Shanghai, China · public 120.243.162.170 · Tailscale 100.103.12.14',
+    '100.86.0.66': 'Shanghai, China · public 120.243.162.170 · Tailscale 100.86.0.66',
     '100.90.67.12': 'Shanghai, China · public 120.243.162.170 · Tailscale 100.90.67.12',
 };
 async function resolveGeo(ip) { return geoCache[ip] || null; }

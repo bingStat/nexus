@@ -44,7 +44,7 @@ def request(method: str, url: str, key: str, body: dict | None = None) -> tuple[
 
 def broker_for(device: str) -> str:
     if device in {"thinkcenter", "n1", "ax3600"}:
-        return os.getenv("NEXUS_V3_CN_BROKER_URL", "http://100.103.12.14:18120").rstrip("/")
+        return os.getenv("NEXUS_V3_CN_BROKER_URL", "http://100.86.0.66:18120").rstrip("/")
     return os.getenv("NEXUS_V3_EU_BROKER_URL", "http://127.0.0.1:18102").rstrip("/")
 
 

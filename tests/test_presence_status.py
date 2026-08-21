@@ -22,7 +22,7 @@ def test_device_status_uses_broker_presence_not_registry_updated_at(monkeypatch)
     old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     recent = datetime.now(timezone.utc).isoformat()
 
-    def fake_request_json(method: str, url: str, body=None):
+    def fake_request_json(method: str, url: str, body=None, **kwargs):
         if "/v3/admin/devices" in url:
             return 200, {"devices": [{"device_id": "victus", "status": "approved", "updated_at": old}]}
         if url.endswith("/v3/agents") and "18102" in url:
@@ -44,7 +44,7 @@ def test_device_status_uses_broker_presence_not_registry_updated_at(monkeypatch)
 def test_missing_presence_is_unknown_even_if_registry_update_is_recent(monkeypatch) -> None:
     recent = datetime.now(timezone.utc).isoformat()
 
-    def fake_request_json(method: str, url: str, body=None):
+    def fake_request_json(method: str, url: str, body=None, **kwargs):
         if "/v3/admin/devices" in url:
             return 200, {"devices": [{"device_id": "oracle", "status": "approved", "updated_at": recent}]}
         if url.endswith("/v3/agents"):
@@ -60,7 +60,7 @@ def test_missing_presence_is_unknown_even_if_registry_update_is_recent(monkeypat
 def test_standard_roles_are_separate_from_runtime_capabilities(monkeypatch) -> None:
     recent = datetime.now(timezone.utc).isoformat()
 
-    def fake_request_json(method: str, url: str, body=None):
+    def fake_request_json(method: str, url: str, body=None, **kwargs):
         if "/v3/admin/devices" in url:
             return 200, {"devices": [
                 {"device_id": "oracle", "status": "approved", "capabilities": {"runtime": "devspace", "devspace_version": "1.0.6"}},

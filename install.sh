@@ -258,7 +258,7 @@ sync_ssh_keys() {
 
 sync_cluster_ssh() {
   registry_url="${NEXUS_V3_REGISTRY_URL:-http://100.116.89.65:18101}"
-  hosts="${NEXUS_CLUSTER_SSH_HOSTS:-oracle_amd root@100.103.12.14 root@100.90.67.12}"
+  hosts="${NEXUS_CLUSTER_SSH_HOSTS:-oracle_amd root@100.86.0.66 root@100.90.67.12}"
   failures=0
   for host in $hosts; do
     if [ "$host" = "local" ] || [ "$host" = "$(hostname 2>/dev/null || true)" ]; then
@@ -421,7 +421,7 @@ install_openwrt_agent() {
   command -v openssl >/dev/null 2>&1 || fail "openssl is required"
 
   registry_url="${NEXUS_V3_REGISTRY_URL:-https://nexus-global-api.bings.app}"
-  broker_url="${NEXUS_V3_BROKER_URL:-http://100.103.12.14:18120}"
+  broker_url="${NEXUS_V3_BROKER_URL:-http://192.168.1.6:18120}"
   install_dir="/opt/nexus-agent"
   config_dir="/etc/nexus-agent"
   config_file="$config_dir/v3.env"
@@ -796,7 +796,7 @@ install_remote() {
 NEXUS_V3_ADMIN_KEY=$admin_key
 NEXUS_V3_REGISTRY_URL=${NEXUS_V3_REGISTRY_URL:-http://127.0.0.1:18101}
 NEXUS_V3_EU_BROKER_URL=${NEXUS_V3_EU_BROKER_URL:-http://127.0.0.1:18102}
-NEXUS_V3_CN_BROKER_URL=${NEXUS_V3_CN_BROKER_URL:-http://100.103.12.14:18120}
+NEXUS_V3_CN_BROKER_URL=${NEXUS_V3_CN_BROKER_URL:-http://100.86.0.66:18120}
 NEXUS_V3_MCP_BIND=${NEXUS_V3_MCP_BIND:-127.0.0.1}
 NEXUS_V3_MCP_PORT=${NEXUS_V3_MCP_PORT:-18130}
 NEXUS_V3_ALLOW_DANGEROUS=${NEXUS_V3_ALLOW_DANGEROUS:-0}

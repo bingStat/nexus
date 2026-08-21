@@ -928,8 +928,8 @@ export default {
         if (method === 'tools/call') {
           const toolName = params.name;
           const args = params.arguments || {};
-          const apiBase = (env.NEXUS_STATUS_SOURCE_URL || 'https://nexus-global-api.bings.app/api/status')
-            .replace(/\/api\/status$/, '');
+          const apiBase = (env.NEXUS_STATUS_SOURCE_URL || 'https://nexus-global-api.bings.app/api/dashboard-status')
+            .replace(/\/api\/(?:status|dashboard-status)$/, '');
           const apiKey = env.NEXUS_CHATGPT_API_KEY || '';
 
           const apiFetch = async (endpoint, method = 'GET', body = null) => {
@@ -1068,8 +1068,8 @@ export default {
     // API Proxy (/api/*)
     // -----------------------------------------------------------------------
     if (path.startsWith('/api/')) {
-      const upstreamBase = (env.NEXUS_STATUS_SOURCE_URL || 'https://nexus-global-api.bings.app/api/status')
-        .replace(/\/api\/status$/, '');
+      const upstreamBase = (env.NEXUS_STATUS_SOURCE_URL || 'https://nexus-global-api.bings.app/api/dashboard-status')
+        .replace(/\/api\/(?:status|dashboard-status)$/, '');
       const upstreamUrl = `${upstreamBase}${url.pathname}${url.search}`;
       const upstreamHeaders = new Headers(request.headers);
       if (env.NEXUS_CHATGPT_API_KEY && !upstreamHeaders.has('Authorization')) {
@@ -1148,8 +1148,12 @@ export default {
         });
       }
       try {
+        const statusHeaders = { 'Accept': 'application/json' };
+        if (!env.NEXUS_STATUS_SOURCE_URL.includes('/api/dashboard-status') && env.NEXUS_CHATGPT_API_KEY) {
+          statusHeaders.Authorization = `Bearer ${env.NEXUS_CHATGPT_API_KEY}`;
+        }
         const upstream = await fetch(env.NEXUS_STATUS_SOURCE_URL, {
-          headers: { 'Authorization': `Bearer ${env.NEXUS_CHATGPT_API_KEY}`, 'Accept': 'application/json' },
+          headers: statusHeaders,
           cf: { cacheTtl: 0, cacheEverything: false },
         });
         if (!upstream.ok) throw new Error(`status source returned ${upstream.status}`);
