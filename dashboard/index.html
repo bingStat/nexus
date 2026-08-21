@@ -1268,8 +1268,17 @@ function normalizeDeviceRecord(raw) {
 
 async function fetchStatusJson() {
     if (location.protocol === 'file:') return null;
-    const response = await fetch(`/status.json?ts=${Date.now()}`, { cache: 'no-store' });
+    const response = await fetch(`/status.json?ts=${Date.now()}`, { cache: 'no-store', redirect: 'follow' });
+    if (response.status === 401 || response.redirected || response.url.includes('/login')) {
+        window.location.assign('/login?to=%2F');
+        return null;
+    }
     if (!response.ok) return null;
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        window.location.assign('/login?to=%2F');
+        return null;
+    }
     const payload = await response.json();
     const devices = Array.isArray(payload) ? payload : payload.devices;
     if (!Array.isArray(devices)) return null;

@@ -47,6 +47,9 @@ def test_dashboard_compact_layout_and_live_status_contract() -> None:
     assert "runtime_status from the Nexus control plane is the single source of truth" in source
     assert "statusAgeMs" not in source
     assert "STATUS ERROR" in source
+    assert "runtime_status from the Nexus control plane is the single source of truth" in source
+    assert "response.status === 401" in source
+    assert "window.location.assign('/login?to=%2F')" in source
     assert 'class="panel compact-details inspector-panel"' in source
     assert 'class="panel compact-details task-panel"' in source
     assert 'id="console-output"' not in source

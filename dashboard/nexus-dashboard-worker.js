@@ -483,6 +483,7 @@ export default {
 
     const password = env.NEXUS_PASSWORD;
     if (!password) return new Response('NEXUS_PASSWORD is not configured', { status: 500 });
+    const sessionSigningSecret = env.NEXUS_SESSION_SIGNING_SECRET || env.NEXUS_CHATGPT_API_KEY || password;
 
     // -----------------------------------------------------------------------
     // OAuth Authorization Endpoint (/authorize)
@@ -1085,7 +1086,7 @@ export default {
     if (path === '/login') {
       const target = safeTarget(url.searchParams.get('to') || '/');
       if (request.method === 'GET') {
-        if (await hasValidSession(request, password)) return Response.redirect(new URL(target, url.origin), 302);
+        if (await hasValidSession(request, sessionSigningSecret)) return Response.redirect(new URL(target, url.origin), 302);
         return loginResponse({ target });
       }
       if (request.method === 'POST') {
@@ -1094,7 +1095,7 @@ export default {
         if (!(await passwordMatches(submitted, password))) return loginResponse({ error: true, target }, 401);
         return new Response(null, {
           status: 302,
-          headers: securityHeaders({ 'Location': target, 'Set-Cookie': await sessionCookie(password), 'Cache-Control': 'no-store' }),
+          headers: securityHeaders({ 'Location': target, 'Set-Cookie': await sessionCookie(sessionSigningSecret), 'Cache-Control': 'no-store' }),
         });
       }
       return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, POST' } });
@@ -1107,7 +1108,13 @@ export default {
       });
     }
 
-    if (!(await hasValidSession(request, password))) {
+    if (!(await hasValidSession(request, sessionSigningSecret))) {
+      if (path === '/status.json') {
+        return new Response(JSON.stringify({ error: 'dashboard session expired' }), {
+          status: 401,
+          headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }),
+        });
+      }
       const target = `${url.pathname}${url.search}`;
       return new Response(null, { status: 302, headers: securityHeaders({ 'Location': `/login?to=${encodeURIComponent(target)}`, 'Cache-Control': 'no-store' }) });
     }
