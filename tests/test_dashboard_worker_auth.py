@@ -58,3 +58,10 @@ def test_dashboard_compact_layout_and_live_status_contract() -> None:
     assert "['index.html', 'release.json']" in source
     assert "grid-template-columns: minmax(0,1fr) 258px" in source
 
+def test_login_template_has_no_mojibake_placeholders() -> None:
+    worker = WORKER.read_text(encoding="utf-8")
+    assert "<title>Nexus ??</title>" not in worker
+    assert "????" not in worker
+    assert "&#30331;&#24405; Nexus" in worker
+    assert "&#38598;&#32676;&#25511;&#21046;&#20013;&#24515;" in worker
+
