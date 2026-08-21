@@ -213,7 +213,7 @@ function loginHtml({ error = false, target = '/' } = {}) {
   const action = `/login?to=${encodeURIComponent(safe)}`;
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nexus ??</title>
+<title>Nexus &#30331;&#24405;</title>
 <script>
 (() => {
   try {
@@ -236,7 +236,7 @@ label{display:block;margin:0 0 8px;font-size:.78rem;font-weight:500;color:var(--
 button{width:100%;height:46px;margin-top:14px;border:0;border-radius:12px;background:var(--blue);color:#fff;font:inherit;font-size:.94rem;font-weight:600;cursor:pointer;transition:background .18s,transform .08s}button:hover{background:var(--blue-hover)}button:active{transform:scale(.995)}.error{margin:-8px 0 18px;padding:11px 12px;border-radius:12px;background:var(--danger-soft);color:var(--danger);font-size:.78rem;line-height:1.4}.foot{margin-top:20px;text-align:center;color:var(--muted);font-size:.7rem;line-height:1.45}
 @media(max-width:520px){.topbar-inner{padding:0 18px}.card{padding:28px 22px 24px;border-radius:20px}.title{font-size:1.58rem}.auth-shell{padding:76px 14px 24px}}
 </style></head>
-<body><header class="topbar"><div class="topbar-inner"><div class="wordmark"><div class="mark">?</div><div class="wordmark-text"><strong>Nexus</strong><span>??????</span></div></div><span style="color:var(--muted);font-size:.7rem">Secure Access</span></div></header><main class="auth-shell"><section class="card"><p class="eyebrow">NEXUS CONTROL PLANE</p><h1 class="title">?? Nexus</h1><p class="lead">???????????????????</p>${error ? '<p class="error">??????????</p>' : ''}<form method="post" action="${action}"><label for="password">??</label><input id="password" name="password" type="password" autocomplete="current-password" autofocus required><button type="submit">??</button></form><div class="foot">??? Bitwarden Password Manager ??</div></section></main></body></html>`;
+<body><header class="topbar"><div class="topbar-inner"><div class="wordmark"><div class="mark">&#8984;</div><div class="wordmark-text"><strong>Nexus</strong><span>&#38598;&#32676;&#25511;&#21046;&#20013;&#24515;</span></div></div><span style="color:var(--muted);font-size:.7rem">Secure Access</span></div></header><main class="auth-shell"><section class="card"><p class="eyebrow">NEXUS CONTROL PLANE</p><h1 class="title">&#30331;&#24405; Nexus</h1><p class="lead">&#35775;&#38382;&#38598;&#32676;&#29366;&#24577;&#12289;&#35774;&#22791;&#25299;&#25169;&#19982;&#36828;&#31243;&#25511;&#21046;&#26381;&#21153;&#12290;</p>${error ? '<p class="error">&#23494;&#30721;&#38169;&#35823;&#65292;&#35831;&#37325;&#35797;&#12290;</p>' : ''}<form method="post" action="${action}"><label for="password">&#23494;&#30721;</label><input id="password" name="password" type="password" autocomplete="current-password" autofocus required><button type="submit">&#30331;&#24405;</button></form><div class="foot">&#23494;&#30721;&#30001; Bitwarden Password Manager &#31649;&#29702;</div></section></main></body></html>`;
 }
 
 function authorizeHtml({ error = false, params = {} } = {}) {
