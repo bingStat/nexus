@@ -150,6 +150,16 @@ assert.ok(tokenResp.refresh_token.startsWith('nxr_'));
 const accessToken = tokenResp.access_token;
 const refreshToken = tokenResp.refresh_token;
 
+// OAuth tokens are machine-signed and must survive dashboard-password rotation.
+const originalPassword = env.NEXUS_PASSWORD;
+env.NEXUS_PASSWORD = 'rotated dashboard password';
+let rotatedAuth = await request('/mcp', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 77 }),
+});
+assert.equal(rotatedAuth.status, 200);
+
 // 8. OAuth Refresh Token Exchange
 response = await request('/token', {
   method: 'POST',
@@ -162,6 +172,7 @@ response = await request('/token', {
 assert.equal(response.status, 200);
 const refreshedResp = await response.json();
 assert.ok(refreshedResp.access_token.startsWith('nxt_'));
+env.NEXUS_PASSWORD = originalPassword;
 
 // 9. MCP Request with Invalid Token -> 401
 response = await request('/mcp', {

@@ -165,8 +165,13 @@ async function verifyAccessToken(token, secret, apiKey = '') {
   if (parts.length !== 2) return false;
   const [dataB64, sig] = parts;
   try {
-    const expectedSig = base64url(await hmacSign(secret, `token:${dataB64}`));
-    if (sig !== expectedSig) return false;
+    const secrets = [apiKey, secret].filter((value, index, all) => value && all.indexOf(value) === index);
+    let signatureOk = false;
+    for (const signingSecret of secrets) {
+      const expectedSig = base64url(await hmacSign(signingSecret, `token:${dataB64}`));
+      if (sig === expectedSig) { signatureOk = true; break; }
+    }
+    if (!signatureOk) return false;
     const json = new TextDecoder().decode(fromBase64url(dataB64));
     const payload = JSON.parse(json);
     if (!payload.exp || Math.floor(Date.now() / 1000) > payload.exp) return false;
@@ -176,15 +181,20 @@ async function verifyAccessToken(token, secret, apiKey = '') {
   }
 }
 
-async function verifyRefreshToken(token, secret) {
+async function verifyRefreshToken(token, secret, apiKey = '') {
   if (!token || !token.startsWith('nxr_')) return null;
   const raw = token.slice(4);
   const parts = raw.split('.');
   if (parts.length !== 2) return null;
   const [dataB64, sig] = parts;
   try {
-    const expectedSig = base64url(await hmacSign(secret, `ref:${dataB64}`));
-    if (sig !== expectedSig) return null;
+    const secrets = [apiKey, secret].filter((value, index, all) => value && all.indexOf(value) === index);
+    let signatureOk = false;
+    for (const signingSecret of secrets) {
+      const expectedSig = base64url(await hmacSign(signingSecret, `ref:${dataB64}`));
+      if (sig === expectedSig) { signatureOk = true; break; }
+    }
+    if (!signatureOk) return null;
     const json = new TextDecoder().decode(fromBase64url(dataB64));
     const payload = JSON.parse(json);
     if (!payload.exp || Math.floor(Date.now() / 1000) > payload.exp) return null;
@@ -595,8 +605,9 @@ export default {
           }
         }
 
-        const accessToken = await createAccessToken(password, authPayload.client_id);
-        const refreshToken = await createRefreshToken(password, authPayload.client_id);
+        const oauthSigningSecret = env.NEXUS_CHATGPT_API_KEY || password;
+        const accessToken = await createAccessToken(oauthSigningSecret, authPayload.client_id);
+        const refreshToken = await createRefreshToken(oauthSigningSecret, authPayload.client_id);
 
         return new Response(JSON.stringify({
           access_token: accessToken,
@@ -612,15 +623,16 @@ export default {
 
       if (grantType === 'refresh_token') {
         const refreshToken = formParams.get('refresh_token') || '';
-        const refreshPayload = await verifyRefreshToken(refreshToken, password);
+        const refreshPayload = await verifyRefreshToken(refreshToken, password, env.NEXUS_CHATGPT_API_KEY || '');
         if (!refreshPayload) {
           return new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Refresh token is invalid or expired' }), {
             status: 400,
             headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
           });
         }
-        const accessToken = await createAccessToken(password, refreshPayload.sub);
-        const newRefreshToken = await createRefreshToken(password, refreshPayload.sub);
+        const oauthSigningSecret = env.NEXUS_CHATGPT_API_KEY || password;
+        const accessToken = await createAccessToken(oauthSigningSecret, refreshPayload.sub);
+        const newRefreshToken = await createRefreshToken(oauthSigningSecret, refreshPayload.sub);
         return new Response(JSON.stringify({
           access_token: accessToken,
           token_type: 'Bearer',
