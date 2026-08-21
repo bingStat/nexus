@@ -1256,7 +1256,8 @@ function normalizeDeviceRecord(raw) {
         ...raw,
         device_id: deviceId,
         name: raw.name || meta.label || raw.hostname || deviceId,
-        status: String(raw.runtime_status || raw.status || 'unknown').toLowerCase(),
+        status: String(raw.runtime_status || 'unknown').toLowerCase(),
+        registry_status: String(raw.status || 'unknown').toLowerCase(),
         last_seen: raw.last_seen_at || raw.last_seen || raw.lastSeen || raw.heartbeat_at || raw.updated_at || raw.updatedAt || raw.approved_at || raw.created_at || '',
         ip: raw.ip || raw.public_ip || raw.tailscale_ip || '',
     };
@@ -1296,32 +1297,24 @@ async function fetchTasks() {
 async function postCommand() { return { ok: false, reason: 'public dashboard is read-only' }; }
 async function pollTask() { return null; }
 
-function statusAgeMs(device) {
-    if (!device?.last_seen) return Infinity;
-    const ts = new Date(device.last_seen).getTime();
-    return Number.isFinite(ts) ? Date.now() - ts : Infinity;
-}
-
 function getDeviceVisualState(device) {
     if (!device) {
         return { key: 'unknown', label: 'UNKNOWN', color: '#6b82a8', lineColor: 'rgba(107,130,168,0.28)' };
     }
 
-    const status = String(device.status || '').toLowerCase();
-    const age = statusAgeMs(device);
-    if (['pending', 'registered', 'waiting'].includes(status)) {
-        return { key: 'pending', label: 'PENDING', color: '#f59e0b', lineColor: 'rgba(245,158,11,0.38)' };
+    // runtime_status from the Nexus control plane is the single source of truth.
+    // last_seen_at is diagnostic/display metadata only; the browser must not
+    // independently reclassify a backend-online device as stale/offline.
+    const status = String(device.status || 'unknown').toLowerCase();
+    if (status === 'online') {
+        return { key: 'online', label: 'ONLINE', color: '#10d98a', lineColor: 'rgba(16,217,138,0.48)' };
     }
-    if (['offline', 'failed', 'error', 'rejected', 'revoked'].includes(status)) {
+    if (status === 'degraded') {
+        return { key: 'degraded', label: 'DEGRADED', color: '#f5a623', lineColor: 'rgba(245,166,35,0.38)' };
+    }
+    if (status === 'offline') {
         return { key: 'offline', label: 'OFFLINE', color: '#ff4d6d', lineColor: 'rgba(255,77,109,0.28)' };
     }
-    if (['online', 'active', 'running', 'approved'].includes(status)) {
-        if (age <= 90_000) return { key: 'online', label: 'ONLINE', color: '#10d98a', lineColor: 'rgba(16,217,138,0.48)' };
-        if (age <= 300_000) return { key: 'degraded', label: 'DEGRADED', color: '#f5a623', lineColor: 'rgba(245,166,35,0.38)' };
-        return { key: 'offline', label: 'STALE', color: '#ff4d6d', lineColor: 'rgba(255,77,109,0.26)' };
-    }
-    if (age <= 90_000) return { key: 'online', label: 'ONLINE', color: '#10d98a', lineColor: 'rgba(16,217,138,0.48)' };
-    if (age <= 300_000) return { key: 'degraded', label: 'DEGRADED', color: '#f5a623', lineColor: 'rgba(245,166,35,0.38)' };
     return { key: 'unknown', label: 'UNKNOWN', color: '#6b82a8', lineColor: 'rgba(107,130,168,0.28)' };
 }
 

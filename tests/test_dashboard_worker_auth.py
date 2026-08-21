@@ -43,6 +43,9 @@ def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:
 def test_dashboard_compact_layout_and_live_status_contract() -> None:
     source = INDEX.read_text(encoding="utf-8")
     assert "raw.last_seen_at" in source
+    assert "status: String(raw.runtime_status || 'unknown')" in source
+    assert "runtime_status from the Nexus control plane is the single source of truth" in source
+    assert "statusAgeMs" not in source
     assert "STATUS ERROR" in source
     assert 'class="panel compact-details inspector-panel"' in source
     assert 'class="panel compact-details task-panel"' in source
