@@ -679,8 +679,8 @@ export default {
           });
         }
         return new Response(JSON.stringify({
-          name: 'Nexus v3 Control Plane',
-          version: '3.1.0',
+          name: 'Nexus',
+          version: '3.2.2',
           protocolVersion: '2024-11-05',
           transport: 'streamable-http',
         }), {
@@ -715,9 +715,9 @@ export default {
             id,
             result: {
               protocolVersion: '2024-11-05',
-              serverInfo: { name: 'Nexus v3 Control Plane', version: '3.1.0' },
+              serverInfo: { name: 'Nexus', version: '3.2.2' },
               capabilities: { tools: { listChanged: false } },
-              instructions: 'Nexus is a distributed DevSpace and multi-device fleet control plane. Target devices explicitly (oracle, thinkcenter, victus, victus-wsl, vsc, n1, ax3600).',
+              instructions: 'Nexus is the canonical production control interface. When the user says Nexus or @Nexus, use this namespace first. Determine availability from tools registered in the current turn, not prior failures. Call self_test to distinguish client/tool-routing problems from Registry/Broker/Agent failures. Never substitute the target device.',
             },
           }), {
             headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
@@ -738,6 +738,11 @@ export default {
             id,
             result: {
               tools: [
+                {
+                  name: 'self_test',
+                  description: 'Diagnose the Nexus production control path: Registry, EU/CN Brokers, and Agent presence. Use this before substituting any fallback control path.',
+                  inputSchema: { type: 'object', properties: {} },
+                },
                 {
                   name: 'list_devices',
                   description: 'List all Nexus fleet devices and their live capabilities (devspace/shell).',
@@ -914,7 +919,9 @@ export default {
 
           try {
             let resultData;
-            if (toolName === 'list_devices') {
+            if (toolName === 'self_test') {
+              resultData = await apiFetch('/api/self-test');
+            } else if (toolName === 'list_devices') {
               resultData = await apiFetch(`/api/devices?status=${encodeURIComponent(args.status || 'approved')}`);
             } else if (toolName === 'get_device') {
               resultData = await apiFetch(`/api/devices/${encodeURIComponent(args.device_id)}`);
@@ -988,7 +995,9 @@ export default {
               jsonrpc: '2.0',
               id,
               result: {
+                isError: false,
                 content: [{ type: 'text', text: JSON.stringify(resultData, null, 2) }],
+                structuredContent: resultData,
               },
             }), {
               headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),

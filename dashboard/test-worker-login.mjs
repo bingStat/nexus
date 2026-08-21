@@ -35,6 +35,12 @@ globalThis.fetch = async (url, options = {}) => {
       devices: [{ device_id: 'oracle', runtime_status: 'online' }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
+  if (urlStr === 'https://nexus-global-api.bings.app/api/self-test') {
+    return new Response(JSON.stringify({
+      status: 'ok', service: 'nexus', version: '3.2.2',
+      components: { registry: { status: 'ok' }, broker_eu: { status: 'ok' }, broker_cn: { status: 'ok' }, presence: { status: 'ok', reachable_agents: 6 } },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
   if (urlStr === 'https://nexus-global-api.bings.app/mcp') {
     assert.equal(options.headers.get?.('Authorization') || options.headers?.Authorization, 'Bearer test-api-key');
     return new Response(JSON.stringify({
@@ -174,7 +180,23 @@ response = await request('/mcp', {
 });
 assert.equal(response.status, 200);
 const mcpJson = await response.json();
-assert.equal(mcpJson.result.tools[0].name, 'list_devices');
+assert.equal(mcpJson.result.tools.length, 12);
+assert.equal(mcpJson.result.tools[0].name, 'self_test');
+assert.ok(mcpJson.result.tools.some((tool) => tool.name === 'execute_command'));
+
+// 10b. MCP self_test dispatches to the canonical REST control plane
+response = await request('/mcp', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 10, params: { name: 'self_test', arguments: {} } }),
+});
+assert.equal(response.status, 200);
+const selfTestRpc = await response.json();
+assert.equal(selfTestRpc.result.isError, false);
+assert.equal(selfTestRpc.result.structuredContent.status, 'ok');
 
 // 11. MCP Request with Direct API Key -> Proxied
 response = await request('/mcp', {
