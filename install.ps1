@@ -216,6 +216,7 @@ $LegacyTaskNames = @(
     "NexusAgent",
     "Nexus v3 Agent ($($DeviceId.ToLowerInvariant()))",
     "NexusV3Agent-Watchdog",
+    "NexusV3Watchdog",
     "NexusV3FunctionalWatchdog"
 )
 foreach ($TaskName in $LegacyTaskNames) {

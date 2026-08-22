@@ -98,6 +98,7 @@ def test_windows_installer_uses_task_scheduler_as_single_supervisor() -> None:
     assert "MultipleInstances" in installer
     assert "RestartCount" in installer
     assert "run-agent.ps1" in installer
+    assert '"NexusV3Watchdog"' in installer
     assert "NexusV3FunctionalWatchdog" in installer
     assert "watchdog.ps1" in installer
     assert "/v3/agents/self" in installer
