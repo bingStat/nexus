@@ -246,6 +246,14 @@ class BrokerStore:
             )
             db.commit()
 
+    def get_presence(self, device_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT device_id,agent_id,last_seen FROM agent_presence WHERE device_id=?",
+                (device_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def list_presence(self) -> list[dict[str, Any]]:
         with self.connect() as db:
             rows = db.execute(
@@ -310,6 +318,12 @@ class Handler(BaseHTTPRequestHandler):
                         "region": os.getenv("NEXUS_V3_REGION", "unknown"),
                     },
                 )
+            if parsed.path == "/v3/agents/self":
+                device_id = self.authenticated_device()
+                presence = self.store.get_presence(device_id)
+                if not presence:
+                    return self.send_json(404, {"error": "presence_not_found"})
+                return self.send_json(200, presence)
             if parsed.path == "/v3/agents":
                 if not admin_ok(self):
                     return self.send_json(403, {"error": "admin auth failed"})

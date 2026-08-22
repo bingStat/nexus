@@ -161,10 +161,62 @@ catch {
 "@
 [System.IO.File]::WriteAllText("$InstallDir\run-agent.ps1", $Runner, $Utf8NoBom)
 
+$FunctionalWatchdog = @"
+`$ErrorActionPreference = "Stop"
+`$installDir = "$InstallDir"
+`$configPath = Join-Path `$installDir "v3.json"
+`$logDir = Join-Path `$installDir "logs"
+`$logPath = Join-Path `$logDir "watchdog.log"
+`$maxAgeSeconds = 120
+New-Item -ItemType Directory -Force -Path `$logDir | Out-Null
+
+function Write-WatchdogLog([string]`$Message) {
+    Add-Content -Path `$logPath -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Date -Format o), `$Message)
+}
+
+function Restart-NexusAgent([string]`$Reason) {
+    Write-WatchdogLog ("restart: " + `$Reason)
+    try { Stop-ScheduledTask -TaskName "NexusV3Agent" -ErrorAction SilentlyContinue } catch {}
+    `$pattern = [regex]::Escape(`$installDir)
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            `$_.CommandLine -and
+            `$_.CommandLine -match `$pattern -and
+            `$_.CommandLine -match "nexus_v3\.agent"
+        } |
+        ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 1
+    Start-ScheduledTask -TaskName "NexusV3Agent" -ErrorAction Stop
+}
+
+try {
+    `$config = Get-Content -LiteralPath `$configPath -Raw | ConvertFrom-Json
+    `$deviceId = [string]`$config.device_id
+    `$broker = ([string]`$config.broker_url).TrimEnd('/')
+    `$deviceKey = (Get-Content -LiteralPath ([string]`$config.device_key) -Raw).Trim()
+    if (-not `$deviceId -or -not `$broker -or -not `$deviceKey) { throw "incomplete agent configuration" }
+
+    `$headers = @{
+        "X-Nexus-Device" = `$deviceId
+        "X-Nexus-Device-Key" = `$deviceKey
+    }
+    `$presence = Invoke-RestMethod -Uri "`$broker/v3/agents/self" -Headers `$headers -Method Get -TimeoutSec 8
+    `$lastSeen = [DateTimeOffset]::Parse([string]`$presence.last_seen).ToUniversalTime()
+    `$age = ([DateTimeOffset]::UtcNow - `$lastSeen).TotalSeconds
+    if (`$age -gt `$maxAgeSeconds) {
+        Restart-NexusAgent ("broker presence stale: {0:N0}s" -f `$age)
+    }
+} catch {
+    Restart-NexusAgent ("functional check failed: " + `$_.Exception.Message)
+}
+"@
+[System.IO.File]::WriteAllText("$InstallDir\watchdog.ps1", $FunctionalWatchdog, $Utf8NoBom)
+
 $LegacyTaskNames = @(
     "NexusAgent",
     "Nexus v3 Agent ($($DeviceId.ToLowerInvariant()))",
-    "NexusV3Agent-Watchdog"
+    "NexusV3Agent-Watchdog",
+    "NexusV3FunctionalWatchdog"
 )
 foreach ($TaskName in $LegacyTaskNames) {
     try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch {}
@@ -184,7 +236,7 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
 $LegacyDir = "$env:USERPROFILE\.nexus-agent"
 if (Test-Path $LegacyDir) { Remove-Item $LegacyDir -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-Item "$InstallDir\agent.log", "$InstallDir\ssh_ed25519.pub" -Force -ErrorAction SilentlyContinue
-Remove-Item "$InstallDir\run-agent.cmd", "$InstallDir\run-agent-silent.vbs", "$InstallDir\run-silent.vbs", "$InstallDir\watchdog.ps1" -Force -ErrorAction SilentlyContinue
+Remove-Item "$InstallDir\run-agent.cmd", "$InstallDir\run-agent-silent.vbs", "$InstallDir\run-silent.vbs" -Force -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "NexusV3Agent" -ErrorAction SilentlyContinue
 
 $TaskName = "NexusV3Agent"
@@ -202,6 +254,12 @@ $TaskSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger -Principal $TaskPrincipal -Settings $TaskSettings | Out-Null
+
+$WatchdogTaskName = "NexusV3FunctionalWatchdog"
+$WatchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\watchdog.ps1"' -f $InstallDir)
+$WatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2)
+$WatchdogSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName $WatchdogTaskName -Action $WatchdogAction -Trigger $WatchdogTrigger -Principal $TaskPrincipal -Settings $WatchdogSettings | Out-Null
 
 & $RuntimePython -m py_compile "$InstallDir\nexus_v3\agent.py" "$InstallDir\nexus_v3\ledger.py"
 if ($LASTEXITCODE -ne 0) { throw "Nexus Python compile check failed" }
@@ -226,7 +284,7 @@ Write-Host "================================================================" -F
 Write-Host " Device ID:     $DeviceId"
 Write-Host " Platform:      $([System.Environment]::OSVersion.VersionString)"
 Write-Host " Install Dir:   $InstallDir"
-Write-Host " Startup:       Task Scheduler\NexusV3Agent (single supervisor)"
+Write-Host " Startup:       Task Scheduler\NexusV3Agent + functional watchdog"
 Write-Host " Registry:      $RegistryUrl"
 Write-Host " Broker:        $BrokerUrl"
 Write-Host " Device Auth:   per-device key"

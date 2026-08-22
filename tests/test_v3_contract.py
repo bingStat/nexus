@@ -98,6 +98,10 @@ def test_windows_installer_uses_task_scheduler_as_single_supervisor() -> None:
     assert "MultipleInstances" in installer
     assert "RestartCount" in installer
     assert "run-agent.ps1" in installer
+    assert "NexusV3FunctionalWatchdog" in installer
+    assert "watchdog.ps1" in installer
+    assert "/v3/agents/self" in installer
+    assert "broker presence stale" in installer
     assert "New-ItemProperty -Path $RunKey" not in installer
     assert "New-ItemProperty -Path \"HKCU:" not in installer
     assert "$VbsRunner" not in installer
@@ -140,6 +144,8 @@ def test_v3_installers_are_separate_from_legacy_services() -> None:
     assert "/api/devices/heartbeat" not in agent
     assert "/v3/devices/heartbeat" not in python_agent
     assert "agent_presence" in broker
+    assert 'parsed.path == "/v3/agents/self"' in broker
+    assert "get_presence" in broker
     assert '"$BROKER_URL/claim' not in agent
     assert "require_success" in python_agent
     assert "subprocess.TimeoutExpired" in python_agent
