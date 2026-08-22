@@ -92,11 +92,13 @@ if ($Node -and $Npm) {
     $parts = $nodeVersion.Split('.')
     if ([int]$parts[0] -gt 22 -or ([int]$parts[0] -eq 22 -and [int]$parts[1] -ge 19)) {
         $DevSpace = "$InstallDir\devspace-runtime"
-        New-Item -ItemType Directory -Force -Path $DevSpace | Out-Null
-        Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/package.json" -OutFile "$DevSpace\package.json"
-        Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/package-lock.json" -OutFile "$DevSpace\package-lock.json"
-        Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/bridge.mjs" -OutFile "$DevSpace\bridge.mjs"
-        Push-Location $DevSpace
+        $DevSpaceStage = "$InstallDir\devspace-runtime.stage.$PID"
+        Remove-Item $DevSpaceStage -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $DevSpaceStage | Out-Null
+        Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/package.json" -OutFile "$DevSpaceStage\package.json"
+        Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/package-lock.json" -OutFile "$DevSpaceStage\package-lock.json"
+        Invoke-WebRequest -UseBasicParsing "$SourceBase/runtime/devspace/bridge.mjs" -OutFile "$DevSpaceStage\bridge.mjs"
+        Push-Location $DevSpaceStage
         try {
             & $Npm.Source ci --omit=dev --no-audit --no-fund
             if ($LASTEXITCODE -ne 0) { throw "DevSpace npm install failed" }
@@ -229,10 +231,25 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         $_.ProcessId -ne $PID -and
         $_.CommandLine -and
         $_.CommandLine -match $InstallDirPattern -and
-        ($_.CommandLine -match "nexus_v3\.agent" -or $_.CommandLine -match "run-agent\.cmd" -or $_.CommandLine -match "run-agent\.ps1")
+        ($_.CommandLine -match "nexus_v3\.agent" -or $_.CommandLine -match "run-agent\.cmd" -or $_.CommandLine -match "run-agent\.ps1" -or $_.CommandLine -match "devspace-runtime")
     } |
     Sort-Object { if ($_.Name -eq 'cmd.exe' -or $_.Name -eq 'powershell.exe') { 0 } else { 1 } } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+if ($DevSpace -and $DevSpaceStage) {
+    $DevSpaceBackup = "$InstallDir\devspace-runtime.previous"
+    Remove-Item $DevSpaceBackup -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        if (Test-Path $DevSpace) { Move-Item -LiteralPath $DevSpace -Destination $DevSpaceBackup }
+        Move-Item -LiteralPath $DevSpaceStage -Destination $DevSpace
+        Remove-Item $DevSpaceBackup -Recurse -Force -ErrorAction SilentlyContinue
+    } catch {
+        if (-not (Test-Path $DevSpace) -and (Test-Path $DevSpaceBackup)) {
+            Move-Item -LiteralPath $DevSpaceBackup -Destination $DevSpace -ErrorAction SilentlyContinue
+        }
+        throw
+    }
+}
 
 $LegacyDir = "$env:USERPROFILE\.nexus-agent"
 if (Test-Path $LegacyDir) { Remove-Item $LegacyDir -Recurse -Force -ErrorAction SilentlyContinue }
