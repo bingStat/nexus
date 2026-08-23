@@ -11,13 +11,13 @@ chmod 700 /etc/nexus-v5
 
 ssh_cmd() {
   target="$1"; shift
-  ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=4 \
+  ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
     -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN" \
     "$target" "$@"
 }
 scp_to() {
   src="$1" target="$2" dst="$3"
-  scp -q -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=4 \
+  scp -q -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
     -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN" \
     "$src" "$target:$dst"
 }
@@ -37,19 +37,19 @@ install_root_worker() {
 }
 
 printf '[1/6] staging direct workers\n'
-install_root_worker root@victus-wsl victus
-install_root_worker root@ThinkCenter thinkcenter
+install_root_worker root@100.72.134.105 victus
+install_root_worker root@100.86.0.66 thinkcenter
 
 VSC_TOKEN="/tmp/nexus-v5-token.$$"
-scp_to "$TOKEN" vsc35603@vsc-tier2 "$VSC_TOKEN"
-ssh_cmd vsc35603@vsc-tier2 "curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/current NEXUS_CONFIG_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/config NEXUS_STATE_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN"
+scp_to "$TOKEN" vsc35603@100.123.110.53 "$VSC_TOKEN"
+ssh_cmd vsc35603@100.123.110.53 "bash -lc 'module load nodejs/22.17.1-GCCcore-14.3.0 >/dev/null 2>&1; NODE=\$(command -v node); NPM=\$(command -v npm); curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/current NEXUS_CONFIG_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/config NEXUS_STATE_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=\$NODE NEXUS_NPM=\$NPM NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN'"
 
 printf '[2/6] staging Oracle controller\n'
 curl -fsSL "https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh" | \
   NEXUS_ROLE=controller NEXUS_DEVICE_ID=oracle NEXUS_REF="$REF" NEXUS_TOKEN_SOURCE="$TOKEN" NEXUS_ACTIVATE=0 NEXUS_RETIRE_V3=0 sh
 
 printf '[3/6] smoke testing routes\n'
-PYTHONPATH=/opt/nexus-v5 NEXUS_V5_ROUTES=/etc/nexus-v5/routes.json NEXUS_V5_TOKEN_FILE="$TOKEN" NEXUS_V5_SSH_KEY="$SSH_KEY" python3 - <<'PY'
+PYTHONPATH=/opt/nexus-v5 NEXUS_V5_ROUTES=/etc/nexus-v5/routes.json NEXUS_V5_TOKEN_FILE="$TOKEN" NEXUS_V5_SSH_KEY="$SSH_KEY" NEXUS_V5_KNOWN_HOSTS="$KNOWN" python3 - <<'PY'
 from nexus_v5.router import Router
 r=Router()
 for device in ('oracle','victus','vsc','thinkcenter','n1'):
@@ -66,10 +66,10 @@ sleep 1
 curl -fsS http://127.0.0.1:18131/health >/dev/null
 
 printf '[5/6] retiring v3 runtime\n'
-for target in root@victus-wsl root@ThinkCenter; do
+for target in root@100.72.134.105 root@100.86.0.66; do
   ssh_cmd "$target" "for u in nexus-v3-agent nexus-v5-agent nexus-v5-direct; do systemctl disable --now \$u.service >/dev/null 2>&1 || true; done"
 done
-ssh_cmd vsc35603@vsc-tier2 "pkill -f 'python.*-m nexus_v3.agent' >/dev/null 2>&1 || true; if command -v crontab >/dev/null 2>&1; then (crontab -l 2>/dev/null | grep -v -E 'nexus-agent-v3|nexus_v3.agent' || true) | crontab -; fi"
+ssh_cmd vsc35603@100.123.110.53 "pkill -f 'python.*-m nexus_v3.agent' >/dev/null 2>&1 || true; if command -v crontab >/dev/null 2>&1; then (crontab -l 2>/dev/null | grep -v -E 'nexus-agent-v3|nexus_v3.agent' || true) | crontab -; fi"
 ssh_cmd root@100.90.67.12 "for s in nexus-v3-agent nexus-agent nexus; do [ ! -x /etc/init.d/\$s ] || { /etc/init.d/\$s stop >/dev/null 2>&1 || true; /etc/init.d/\$s disable >/dev/null 2>&1 || true; }; done"
 for u in nexus-v3-agent nexus-v3-mcp nexus-v3-registry nexus-v3-eu-broker nexus-v3-cn-broker nexus-chatgpt-remote nexus-v5-agent nexus-v5-direct; do
   systemctl disable --now "$u.service" >/dev/null 2>&1 || true
@@ -77,7 +77,7 @@ done
 systemctl restart nexus-v5-api.service
 
 printf '[6/6] final verification\n'
-PYTHONPATH=/opt/nexus-v5 NEXUS_V5_ROUTES=/etc/nexus-v5/routes.json NEXUS_V5_TOKEN_FILE="$TOKEN" NEXUS_V5_SSH_KEY="$SSH_KEY" python3 - <<'PY'
+PYTHONPATH=/opt/nexus-v5 NEXUS_V5_ROUTES=/etc/nexus-v5/routes.json NEXUS_V5_TOKEN_FILE="$TOKEN" NEXUS_V5_SSH_KEY="$SSH_KEY" NEXUS_V5_KNOWN_HOSTS="$KNOWN" python3 - <<'PY'
 from nexus_v5.router import Router
 r=Router()
 for row in r.health_all(): print(row)
