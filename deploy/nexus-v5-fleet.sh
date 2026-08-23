@@ -40,9 +40,12 @@ printf '[1/6] staging direct workers\n'
 install_root_worker root@100.72.134.105 victus
 install_root_worker root@100.86.0.66 thinkcenter
 
+VSC_TARGET="vsc35603@100.123.110.53"
+VSC_BASE="/data/leuven/356/vsc35603/services/nexus-v5"
+VSC_NODE="$VSC_BASE/node-v22.22.0"
 VSC_TOKEN="/tmp/nexus-v5-token.$$"
-scp_to "$TOKEN" vsc35603@100.123.110.53 "$VSC_TOKEN"
-ssh_cmd vsc35603@100.123.110.53 "bash -lc 'module load Python/3.11.5-GCCcore-13.2.0 nodejs/22.17.1-GCCcore-14.3.0 >/dev/null 2>&1; PY=\$(command -v python3); NODE=\$(command -v node); NPM=\$(command -v npm); curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | PYTHON=\$PY NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/current NEXUS_CONFIG_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/config NEXUS_STATE_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=\$NODE NEXUS_NPM=\$NPM NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN'"
+scp_to "$TOKEN" "$VSC_TARGET" "$VSC_TOKEN"
+ssh_cmd "$VSC_TARGET" "bash -lc 'set -e; if [ ! -x $VSC_NODE/bin/node ]; then mkdir -p $VSC_BASE; curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz -o /tmp/node-v22.22.0.tar.xz; tar -xJf /tmp/node-v22.22.0.tar.xz -C $VSC_BASE; mv $VSC_BASE/node-v22.22.0-linux-x64 $VSC_NODE; rm -f /tmp/node-v22.22.0.tar.xz; fi; module load Python/3.11.5-GCCcore-13.2.0 >/dev/null 2>&1; PY=\$(command -v python3); export PATH=$VSC_NODE/bin:\$PATH; curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | PYTHON=\$PY NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=$VSC_BASE/current NEXUS_CONFIG_ROOT=$VSC_BASE/config NEXUS_STATE_ROOT=$VSC_BASE/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=$VSC_NODE/bin/node NEXUS_NPM=$VSC_NODE/bin/npm NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN'"
 
 printf '[2/6] staging Oracle controller\n'
 curl -fsSL "https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh" | \
@@ -69,7 +72,7 @@ printf '[5/6] retiring v3 runtime\n'
 for target in root@100.72.134.105 root@100.86.0.66; do
   ssh_cmd "$target" "for u in nexus-v3-agent nexus-v5-agent nexus-v5-direct; do systemctl disable --now \$u.service >/dev/null 2>&1 || true; done"
 done
-ssh_cmd vsc35603@100.123.110.53 "pkill -f 'python.*-m nexus_v3.agent' >/dev/null 2>&1 || true; if command -v crontab >/dev/null 2>&1; then (crontab -l 2>/dev/null | grep -v -E 'nexus-agent-v3|nexus_v3.agent' || true) | crontab -; fi"
+ssh_cmd "$VSC_TARGET" "pkill -f 'python.*-m nexus_v3.agent' >/dev/null 2>&1 || true; if command -v crontab >/dev/null 2>&1; then (crontab -l 2>/dev/null | grep -v -E 'nexus-agent-v3|nexus_v3.agent' || true) | crontab -; fi"
 ssh_cmd root@100.90.67.12 "for s in nexus-v3-agent nexus-agent nexus; do [ ! -x /etc/init.d/\$s ] || { /etc/init.d/\$s stop >/dev/null 2>&1 || true; /etc/init.d/\$s disable >/dev/null 2>&1 || true; }; done"
 for u in nexus-v3-agent nexus-v3-mcp nexus-v3-registry nexus-v3-eu-broker nexus-v3-cn-broker nexus-chatgpt-remote nexus-v5-agent nexus-v5-direct; do
   systemctl disable --now "$u.service" >/dev/null 2>&1 || true
