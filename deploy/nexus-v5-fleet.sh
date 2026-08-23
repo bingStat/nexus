@@ -51,15 +51,25 @@ printf '[1/6] staging direct workers\n'
 install_root_worker root@100.72.134.105 victus 100.72.134.105
 install_root_worker root@100.86.0.66 thinkcenter 100.86.0.66
 
+ELITE_TARGET="bing@100.118.181.6"
+ELITE_NODE="/opt/node-v22.22.0"
+ELITE_TOKEN="/tmp/nexus-v5-token.$$"
+scp_to "$TOKEN" "$ELITE_TARGET" "$ELITE_TOKEN"
+ssh_cmd "$ELITE_TARGET" "set -e; if [ ! -x $ELITE_NODE/bin/node ]; then curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz -o /tmp/node-v22.22.0.tar.xz; sudo rm -rf $ELITE_NODE; sudo mkdir -p $ELITE_NODE; sudo tar -xJf /tmp/node-v22.22.0.tar.xz -C $ELITE_NODE --strip-components=1; rm -f /tmp/node-v22.22.0.tar.xz; fi; curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | sudo env PATH=$ELITE_NODE/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin NEXUS_ROLE=worker NEXUS_DEVICE_ID=elitebook NEXUS_BIND=100.118.181.6 NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$ELITE_TOKEN NEXUS_DEVSPACE_ALLOWED_ROOTS=/home/bing NEXUS_NODE=$ELITE_NODE/bin/node NEXUS_NPM=$ELITE_NODE/bin/npm NEXUS_RETIRE_V3=1 sh; rm -f $ELITE_TOKEN"
+
 VSC_TARGET="vsc35603@100.123.110.53"
 VSC_BASE="/data/leuven/356/vsc35603/services/nexus-v5"
 VSC_NODE="$VSC_BASE/node-v22.22.0"
+VSC_TS="/user/leuven/356/vsc35603/.local/bin/tailscale"
+VSC_SOCKET="/user/leuven/356/vsc35603/.local/state/tailscale/tailscaled.sock"
+VSC_LOG="/user/leuven/356/vsc35603/.local/state/tailscale/tailscaled.log"
 VSC_TOKEN="/tmp/nexus-v5-token.$$"
 scp_to "$TOKEN" "$VSC_TARGET" "$VSC_TOKEN"
-ssh_cmd "$VSC_TARGET" "bash -lc 'set -e; if [ ! -x $VSC_NODE/bin/node ]; then mkdir -p $VSC_BASE; curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz -o /tmp/node-v22.22.0.tar.xz; tar -xJf /tmp/node-v22.22.0.tar.xz -C $VSC_BASE; mv $VSC_BASE/node-v22.22.0-linux-x64 $VSC_NODE; rm -f /tmp/node-v22.22.0.tar.xz; fi; module load Python/3.11.5-GCCcore-13.2.0 >/dev/null 2>&1; PY=\$(command -v python3); export PATH=$VSC_NODE/bin:\$PATH; curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | PYTHON=\$PY NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_BIND=100.123.110.53 NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=$VSC_BASE/current NEXUS_CONFIG_ROOT=$VSC_BASE/config NEXUS_STATE_ROOT=$VSC_BASE/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=$VSC_NODE/bin/node NEXUS_NPM=$VSC_NODE/bin/npm NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN'"
+ssh_cmd "$VSC_TARGET" "bash -lc 'set -e; if [ ! -x $VSC_NODE/bin/node ]; then mkdir -p $VSC_BASE; curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz -o /tmp/node-v22.22.0.tar.xz; tar -xJf /tmp/node-v22.22.0.tar.xz -C $VSC_BASE; mv $VSC_BASE/node-v22.22.0-linux-x64 $VSC_NODE; rm -f /tmp/node-v22.22.0.tar.xz; fi; module load Python/3.11.5-GCCcore-13.2.0 >/dev/null 2>&1; PY=\$(command -v python3); export PATH=$VSC_NODE/bin:\$PATH; curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | PYTHON=\$PY NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_BIND=127.0.0.1 NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=$VSC_BASE/current NEXUS_CONFIG_ROOT=$VSC_BASE/config NEXUS_STATE_ROOT=$VSC_BASE/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=$VSC_NODE/bin/node NEXUS_NPM=$VSC_NODE/bin/npm NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN; if ! $VSC_TS --socket=$VSC_SOCKET serve --bg --tcp=18505 tcp://127.0.0.1:18505; then : > $VSC_LOG; $VSC_TS --socket=$VSC_SOCKET serve --bg --tcp=18505 tcp://127.0.0.1:18505; fi'"
 
 wait_health http://100.72.134.105:18505
 wait_health http://100.86.0.66:18505
+wait_health http://100.118.181.6:18505
 wait_health http://100.123.110.53:18505
 
 printf '[2/6] staging Oracle controller\n'
@@ -75,6 +85,7 @@ expected={
     'victus':'v5-direct',
     'vsc':'v5-direct',
     'thinkcenter':'v5-direct',
+    'elitebook':'v5-direct',
     'n1':'v5-ssh',
 }
 for device, transport in expected.items():
@@ -116,7 +127,7 @@ for row in rows:
 if any(row.get('status') != 'online' for row in rows):
     raise SystemExit('one or more Nexus v5 routes are offline')
 for row in rows:
-    if row['device_id'] in {'victus','vsc','thinkcenter'} and not row.get('devspace'):
+    if row['device_id'] in {'victus','vsc','thinkcenter','elitebook'} and not row.get('devspace'):
         raise SystemExit(f"{row['device_id']} DevSpace is unavailable")
 PY
 systemctl --no-pager --full status nexus-v5-api.service | sed -n '1,8p'
