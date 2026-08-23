@@ -73,7 +73,7 @@ class Router:
     def _ssh_argv(self, target: str, command: str) -> list[str]:
         return [
             "ssh", "-i", self.ssh_key,
-            "-o", "BatchMode=yes", "-o", "ConnectTimeout=2",
+            "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", f"UserKnownHostsFile={self.known_hosts}",
             "-o", "ControlMaster=auto", "-o", "ControlPersist=600",
@@ -86,7 +86,7 @@ class Router:
             raise RuntimeError(f"SSH route unavailable for {device}")
         started = time.perf_counter()
         proc = subprocess.run(self._ssh_argv(target, command), capture_output=True, text=True,
-                              timeout=max(3, timeout_ms / 1000 + 2))
+                              timeout=max(7, timeout_ms / 1000 + 2))
         output = (proc.stdout + proc.stderr)[-20000:]
         return {
             "status": "completed" if proc.returncode == 0 else "failed",
@@ -111,7 +111,7 @@ class Router:
         def run() -> None:
             try:
                 subprocess.run(self._ssh_argv(target, self._rescue_command(route)),
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
             except Exception:
                 pass
         threading.Thread(target=run, daemon=True, name="nexus-v5-rescue").start()
@@ -150,7 +150,7 @@ class Router:
             if not target:
                 raise
             subprocess.run(self._ssh_argv(target, self._rescue_command(route)),
-                           capture_output=True, text=True, timeout=8)
+                           capture_output=True, text=True, timeout=10)
             return self._http(endpoint, "/v5/runtime", payload, timeout_ms)
 
     def list_devices(self) -> list[dict[str, Any]]:
