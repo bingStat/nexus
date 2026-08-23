@@ -1,0 +1,39 @@
+{
+  "devices": {
+    "oracle": {
+      "mode": "local",
+      "devspace": false
+    },
+    "victus": {
+      "mode": "direct",
+      "endpoint": "http://100.72.134.105:18505",
+      "ssh": "root@100.72.134.105",
+      "devspace": true
+    },
+    "vsc": {
+      "mode": "direct",
+      "endpoint": "http://100.123.110.53:18505",
+      "ssh": "vsc35603@100.123.110.53",
+      "devspace": true,
+      "rescue": "pkill -f 'python3 -m nexus_v5.worker' >/dev/null 2>&1 || true; nohup /data/leuven/356/vsc35603/services/nexus-v5/current/run-worker.sh >/data/leuven/356/vsc35603/services/nexus-v5/state/worker.log 2>&1 </dev/null &"
+    },
+    "thinkcenter": {
+      "mode": "direct",
+      "endpoint": "http://100.86.0.66:18505",
+      "ssh": "root@100.86.0.66",
+      "devspace": true
+    },
+    "n1": {
+      "mode": "ssh",
+      "ssh": "root@100.90.67.12",
+      "devspace": false
+    }
+  },
+  "aliases": {
+    "oracle-amd": "oracle",
+    "victus-wsl": "victus",
+    "tier2-p-login-3": "vsc",
+    "vsc-tier2": "vsc",
+    "istoreos": "n1"
+  }
+}

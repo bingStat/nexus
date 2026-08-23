@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexus-control-plane"
-version = "3.2.1"
-description = "Distributed DevSpace and multi-device fleet control plane"
+version = "5.0.0"
+description = "Minimal direct-first multi-device control plane"
 requires-python = ">=3.10"
 dependencies = [
   "requests>=2.31",
@@ -16,4 +16,4 @@ remote = ["mcp[cli]>=1.26,<2", "uvicorn"]
 dev = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
-include = ["nexus_v3*", "ops*"]
+include = ["nexus_v5*", "nexus_v3*", "ops*"]
