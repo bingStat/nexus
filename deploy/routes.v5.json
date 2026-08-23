@@ -15,7 +15,7 @@
       "endpoint": "http://100.123.110.53:18505",
       "ssh": "vsc35603@100.123.110.53",
       "devspace": true,
-      "rescue": "pkill -f 'python3 -m nexus_v5.worker' >/dev/null 2>&1 || true; nohup /data/leuven/356/vsc35603/services/nexus-v5/current/run-worker.sh >/data/leuven/356/vsc35603/services/nexus-v5/state/worker.log 2>&1 </dev/null &"
+      "rescue": "pkill -f '^[^ ]*python[^ ]* -m nexus_v5[.]worker( |$)' >/dev/null 2>&1 || true; if command -v setsid >/dev/null 2>&1; then setsid -f /data/leuven/356/vsc35603/services/nexus-v5/current/run-worker.sh >/data/leuven/356/vsc35603/services/nexus-v5/state/worker.log 2>&1 </dev/null; else nohup /data/leuven/356/vsc35603/services/nexus-v5/current/run-worker.sh >/data/leuven/356/vsc35603/services/nexus-v5/state/worker.log 2>&1 </dev/null & fi"
     },
     "thinkcenter": {
       "mode": "direct",
