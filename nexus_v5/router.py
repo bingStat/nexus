@@ -20,6 +20,10 @@ class Router:
         self.token = token_path.read_text(encoding="utf-8").strip()
         self.devices = {str(k).lower(): v for k, v in self.routes.get("devices", {}).items()}
         self.aliases = {str(k).lower(): str(v).lower() for k, v in self.routes.get("aliases", {}).items()}
+        self.ssh_key = os.getenv("NEXUS_V5_SSH_KEY", "/home/ubuntu/.ssh/id_ed25519_oracle")
+        self.known_hosts = os.getenv("NEXUS_V5_KNOWN_HOSTS", "/etc/nexus-v5/known_hosts")
+        Path(self.known_hosts).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.known_hosts).touch(exist_ok=True)
 
     def resolve(self, device: str) -> tuple[str, dict[str, Any]]:
         name = str(device).strip().lower()
@@ -66,10 +70,12 @@ class Router:
         data["client_elapsed_ms"] = round((time.perf_counter() - started) * 1000, 3)
         return data
 
-    @staticmethod
-    def _ssh_argv(target: str, command: str) -> list[str]:
+    def _ssh_argv(self, target: str, command: str) -> list[str]:
         return [
-            "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2",
+            "ssh", "-i", self.ssh_key,
+            "-o", "BatchMode=yes", "-o", "ConnectTimeout=2",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", f"UserKnownHostsFile={self.known_hosts}",
             "-o", "ControlMaster=auto", "-o", "ControlPersist=600",
             "-o", "ControlPath=/tmp/nexus-v5-%C", target, command,
         ]
