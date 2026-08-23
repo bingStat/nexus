@@ -69,12 +69,16 @@ if [ "$ROLE" = "worker" ]; then
   DEVSPACE="${NEXUS_DEVSPACE:-1}"
   DEVSPACE_JSON=""
   if [ "$DEVSPACE" = "1" ]; then
-    command -v npm >/dev/null 2>&1 || fail "npm is required for DevSpace worker mode"
-    (cd "$ROOT/runtime/devspace" && npm install --no-audit --no-fund >/dev/null)
+    NODE_BIN="${NEXUS_NODE:-$(command -v node 2>/dev/null || true)}"
+    NPM_BIN="${NEXUS_NPM:-$(command -v npm 2>/dev/null || true)}"
+    [ -n "$NODE_BIN" ] || fail "node is required for DevSpace worker mode"
+    [ -n "$NPM_BIN" ] || fail "npm is required for DevSpace worker mode"
+    (cd "$ROOT/runtime/devspace" && "$NPM_BIN" install --no-audit --no-fund >/dev/null)
     ALLOWED="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-/}"
     DEVSPACE_JSON=",
   \"devspace\": {
     \"bridge\": \"$ROOT/runtime/devspace/bridge.mjs\",
+    \"node\": \"$NODE_BIN\",
     \"allowed_roots\": [\"$ALLOWED\"],
     \"state_dir\": \"$STATE/devspace\"
   }"
@@ -115,7 +119,7 @@ EOF
     pkill -f "nexus_v5.worker --config $CONF/worker.json" >/dev/null 2>&1 || true
     nohup "$ROOT/run-worker.sh" > "$STATE/worker.log" 2>&1 </dev/null &
     if command -v crontab >/dev/null 2>&1; then
-      (crontab -l 2>/dev/null | grep -v 'nexus-v5/run-worker.sh' || true; printf '@reboot %s\n' "$ROOT/run-worker.sh") | crontab -
+      (crontab -l 2>/dev/null | grep -v 'nexus-v5/current/run-worker.sh' || true; printf '@reboot %s\n' "$ROOT/run-worker.sh") | crontab -
     fi
   fi
   retire_v3
