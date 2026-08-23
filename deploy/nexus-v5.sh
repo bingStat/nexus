@@ -27,8 +27,23 @@ tar -xzf "$TMP/nexus.tar.gz" -C "$TMP"
 SRC="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -1)"
 [ -d "$SRC/nexus_v5" ] || fail "nexus_v5 source missing from $REF"
 mkdir -p "$ROOT" "$CONF" "$STATE"
+
+# Preserve the expensive DevSpace dependency tree when package-lock.json did not
+# change. This keeps repeated fleet deployments idempotent and avoids needless
+# network installs while still forcing npm ci after dependency changes.
+KEEP_DEVSPACE_DEPS=""
+if [ -d "$ROOT/runtime/devspace/node_modules" ] && \
+   [ -f "$ROOT/runtime/devspace/package-lock.json" ] && \
+   [ -f "$SRC/runtime/devspace/package-lock.json" ] && \
+   cmp -s "$ROOT/runtime/devspace/package-lock.json" "$SRC/runtime/devspace/package-lock.json"; then
+  KEEP_DEVSPACE_DEPS="$TMP/devspace-node_modules"
+  mv "$ROOT/runtime/devspace/node_modules" "$KEEP_DEVSPACE_DEPS"
+fi
 rm -rf "$ROOT/nexus_v5" "$ROOT/nexus_v3" "$ROOT/runtime"
 cp -R "$SRC/nexus_v5" "$SRC/nexus_v3" "$SRC/runtime" "$ROOT/"
+if [ -n "$KEEP_DEVSPACE_DEPS" ] && [ -d "$KEEP_DEVSPACE_DEPS" ]; then
+  mv "$KEEP_DEVSPACE_DEPS" "$ROOT/runtime/devspace/node_modules"
+fi
 printf '%s\n' "$REF" > "$ROOT/DEPLOYED_REF"
 
 TOKEN_FILE="$CONF/token"
@@ -73,9 +88,11 @@ if [ "$ROLE" = "worker" ]; then
     NPM_BIN="${NEXUS_NPM:-$(command -v npm 2>/dev/null || true)}"
     [ -n "$NODE_BIN" ] || fail "node is required for DevSpace worker mode"
     [ -n "$NPM_BIN" ] || fail "npm is required for DevSpace worker mode"
-    NPM_CACHE="${NEXUS_NPM_CACHE:-$STATE/npm-cache}"
-    mkdir -p "$NPM_CACHE"
-    (cd "$ROOT/runtime/devspace" && npm_config_cache="$NPM_CACHE" "$NPM_BIN" ci --no-audit --no-fund >/dev/null)
+    if [ ! -d "$ROOT/runtime/devspace/node_modules" ]; then
+      NPM_CACHE="${NEXUS_NPM_CACHE:-$STATE/npm-cache}"
+      mkdir -p "$NPM_CACHE"
+      (cd "$ROOT/runtime/devspace" && npm_config_cache="$NPM_CACHE" "$NPM_BIN" ci --no-audit --no-fund >/dev/null)
+    fi
     ALLOWED="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-/}"
     DEVSPACE_JSON=",
   \"devspace\": {
