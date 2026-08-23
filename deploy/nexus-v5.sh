@@ -46,7 +46,7 @@ chmod 600 "$TOKEN_FILE"
 retire_v3() {
   [ "${NEXUS_RETIRE_V3:-0}" = "1" ] || return 0
   if command -v systemctl >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
-    for unit in nexus-v3-agent nexus-v3-mcp nexus-v3-registry nexus-v3-eu-broker nexus-v3-cn-broker nexus-chatgpt-remote nexus-v5-agent nexus-v5-direct; do
+    for unit in nexus-v3-agent nexus-v3-broker nexus-v3-mcp nexus-v3-registry nexus-v3-eu-broker nexus-v3-cn-broker nexus-chatgpt-remote nexus-v5-agent nexus-v5-direct nexus-v5-eu-broker nexus-v5-cn-broker; do
       systemctl disable --now "$unit.service" >/dev/null 2>&1 || true
     done
   else
