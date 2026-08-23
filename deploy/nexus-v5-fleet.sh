@@ -2,7 +2,7 @@
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo "run on Oracle as root" >&2; exit 1; }
-REF="${NEXUS_REF:-nexus-v5-minimal}"
+REF="${NEXUS_REF:-main}"
 SSH_KEY="${NEXUS_V5_SSH_KEY:-/home/ubuntu/.ssh/id_ed25519_oracle}"
 KNOWN="${NEXUS_V5_KNOWN_HOSTS:-/etc/nexus-v5/known_hosts}"
 mkdir -p /etc/nexus-v5
