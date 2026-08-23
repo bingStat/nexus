@@ -1,0 +1,38 @@
+{
+  "devices": {
+    "oracle": {
+      "mode": "local",
+      "devspace": false
+    },
+    "victus": {
+      "mode": "direct",
+      "endpoint": "http://victus-wsl:18505",
+      "ssh": "root@victus-wsl",
+      "devspace": true
+    },
+    "vsc": {
+      "mode": "direct",
+      "endpoint": "http://vsc-tier2:18505",
+      "ssh": "vsc35603@vsc-tier2",
+      "devspace": true,
+      "worker_service": "nexus-v5-worker.service"
+    },
+    "thinkcenter": {
+      "mode": "direct",
+      "endpoint": "http://ThinkCenter:18505",
+      "ssh": "root@ThinkCenter",
+      "devspace": true
+    },
+    "n1": {
+      "mode": "ssh",
+      "ssh": "root@n1",
+      "devspace": false
+    }
+  },
+  "aliases": {
+    "oracle-amd": "oracle",
+    "victus-wsl": "victus",
+    "tier2-p-login-3": "vsc",
+    "vsc-tier2": "vsc"
+  }
+}
