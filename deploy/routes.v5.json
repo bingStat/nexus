@@ -25,7 +25,7 @@
     },
     "n1": {
       "mode": "ssh",
-      "ssh": "root@n1",
+      "ssh": "root@100.90.67.12",
       "devspace": false
     }
   },
@@ -33,6 +33,7 @@
     "oracle-amd": "oracle",
     "victus-wsl": "victus",
     "tier2-p-login-3": "vsc",
-    "vsc-tier2": "vsc"
+    "vsc-tier2": "vsc",
+    "istoreos": "n1"
   }
 }
