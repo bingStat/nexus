@@ -93,6 +93,9 @@ if [ "$ROLE" = "worker" ]; then
 EOF
 
   if command -v systemctl >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+    for old in nexus-v5-agent nexus-v5-direct; do
+      systemctl disable --now "$old.service" >/dev/null 2>&1 || true
+    done
     cat > /etc/systemd/system/nexus-v5-worker.service <<EOF
 [Unit]
 Description=Nexus v5 direct worker
@@ -111,6 +114,8 @@ EOF
     systemctl daemon-reload
     systemctl enable --now nexus-v5-worker.service
   else
+    pkill -f 'python.*-m nexus_v5.agent' >/dev/null 2>&1 || true
+    pkill -f 'python.*-m nexus_v5.direct_server' >/dev/null 2>&1 || true
     cat > "$ROOT/run-worker.sh" <<EOF
 #!/bin/sh
 exec env PYTHONPATH="$ROOT" "$PYTHON" -m nexus_v5.worker --config "$CONF/worker.json"
