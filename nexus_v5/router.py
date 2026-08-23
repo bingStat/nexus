@@ -97,14 +97,20 @@ class Router:
             "client_elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
         }
 
+    @staticmethod
+    def _rescue_command(route: dict[str, Any]) -> str:
+        configured = str(route.get("rescue") or "").strip()
+        if configured:
+            return configured
+        return f"systemctl restart {str(route.get('worker_service') or 'nexus-v5-worker.service')}"
+
     def _restart_worker_async(self, route: dict[str, Any]) -> None:
         target = str(route.get("ssh") or "")
-        service = str(route.get("worker_service") or "nexus-v5-worker.service")
         if not target:
             return
         def run() -> None:
             try:
-                subprocess.run(self._ssh_argv(target, f"sudo -n systemctl restart {service} >/dev/null 2>&1 || true"),
+                subprocess.run(self._ssh_argv(target, self._rescue_command(route)),
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
             except Exception:
                 pass
@@ -141,10 +147,9 @@ class Router:
             return self._http(endpoint, "/v5/runtime", payload, timeout_ms)
         except Exception:
             target = str(route.get("ssh") or "")
-            service = str(route.get("worker_service") or "nexus-v5-worker.service")
             if not target:
                 raise
-            subprocess.run(self._ssh_argv(target, f"sudo -n systemctl restart {service}"),
+            subprocess.run(self._ssh_argv(target, self._rescue_command(route)),
                            capture_output=True, text=True, timeout=8)
             return self._http(endpoint, "/v5/runtime", payload, timeout_ms)
 
