@@ -42,7 +42,7 @@ install_root_worker root@100.86.0.66 thinkcenter
 
 VSC_TOKEN="/tmp/nexus-v5-token.$$"
 scp_to "$TOKEN" vsc35603@100.123.110.53 "$VSC_TOKEN"
-ssh_cmd vsc35603@100.123.110.53 "bash -lc 'module load nodejs/22.17.1-GCCcore-14.3.0 >/dev/null 2>&1; NODE=\$(command -v node); NPM=\$(command -v npm); curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/current NEXUS_CONFIG_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/config NEXUS_STATE_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=\$NODE NEXUS_NPM=\$NPM NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN'"
+ssh_cmd vsc35603@100.123.110.53 "bash -lc 'module load Python/3.11.5-GCCcore-13.2.0 nodejs/22.17.1-GCCcore-14.3.0 >/dev/null 2>&1; PY=\$(command -v python3); NODE=\$(command -v node); NPM=\$(command -v npm); curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | PYTHON=\$PY NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/current NEXUS_CONFIG_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/config NEXUS_STATE_ROOT=/data/leuven/356/vsc35603/services/nexus-v5/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=\$NODE NEXUS_NPM=\$NPM NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN'"
 
 printf '[2/6] staging Oracle controller\n'
 curl -fsSL "https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh" | \
