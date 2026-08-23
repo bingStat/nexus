@@ -33,7 +33,7 @@ printf '%s\n' "$REF" > "$ROOT/DEPLOYED_REF"
 
 TOKEN_FILE="$CONF/token"
 if [ -n "${NEXUS_TOKEN_SOURCE:-}" ]; then
-  cp "$NEXUS_TOKEN_SOURCE" "$TOKEN_FILE"
+  [ "$NEXUS_TOKEN_SOURCE" = "$TOKEN_FILE" ] || cp "$NEXUS_TOKEN_SOURCE" "$TOKEN_FILE"
 elif [ -n "${NEXUS_V5_TOKEN:-}" ]; then
   umask 077
   printf '%s\n' "$NEXUS_V5_TOKEN" > "$TOKEN_FILE"
@@ -73,7 +73,9 @@ if [ "$ROLE" = "worker" ]; then
     NPM_BIN="${NEXUS_NPM:-$(command -v npm 2>/dev/null || true)}"
     [ -n "$NODE_BIN" ] || fail "node is required for DevSpace worker mode"
     [ -n "$NPM_BIN" ] || fail "npm is required for DevSpace worker mode"
-    (cd "$ROOT/runtime/devspace" && "$NPM_BIN" install --no-audit --no-fund >/dev/null)
+    NPM_CACHE="${NEXUS_NPM_CACHE:-$STATE/npm-cache}"
+    mkdir -p "$NPM_CACHE"
+    (cd "$ROOT/runtime/devspace" && npm_config_cache="$NPM_CACHE" "$NPM_BIN" ci --no-audit --no-fund >/dev/null)
     ALLOWED="${NEXUS_DEVSPACE_ALLOWED_ROOTS:-/}"
     DEVSPACE_JSON=",
   \"devspace\": {
