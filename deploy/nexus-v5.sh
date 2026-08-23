@@ -3,7 +3,7 @@ set -eu
 
 ROLE="${NEXUS_ROLE:-worker}"
 DEVICE_ID="${NEXUS_DEVICE_ID:-$(hostname | tr '[:upper:]' '[:lower:]')}"
-REF="${NEXUS_REF:-nexus-v5-minimal}"
+REF="${NEXUS_REF:-main}"
 PYTHON="${PYTHON:-python3}"
 
 fail() { printf 'nexus-v5 install: %s\n' "$*" >&2; exit 1; }
