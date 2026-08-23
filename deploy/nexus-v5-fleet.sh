@@ -70,11 +70,11 @@ curl -fsS http://127.0.0.1:18131/health >/dev/null
 
 printf '[5/6] retiring v3 runtime\n'
 for target in root@100.72.134.105 root@100.86.0.66; do
-  ssh_cmd "$target" "for u in nexus-v3-agent nexus-v5-agent nexus-v5-direct; do systemctl disable --now \$u.service >/dev/null 2>&1 || true; done"
+  ssh_cmd "$target" "for u in nexus-v3-agent nexus-v3-broker nexus-v5-agent nexus-v5-direct nexus-v5-eu-broker nexus-v5-cn-broker; do systemctl disable --now \$u.service >/dev/null 2>&1 || true; done"
 done
 ssh_cmd "$VSC_TARGET" "pkill -f 'python.*-m nexus_v3.agent' >/dev/null 2>&1 || true; if command -v crontab >/dev/null 2>&1; then (crontab -l 2>/dev/null | grep -v -E 'nexus-agent-v3|nexus_v3.agent' || true) | crontab -; fi"
 ssh_cmd root@100.90.67.12 "for s in nexus-v3-agent nexus-agent nexus; do [ ! -x /etc/init.d/\$s ] || { /etc/init.d/\$s stop >/dev/null 2>&1 || true; /etc/init.d/\$s disable >/dev/null 2>&1 || true; }; done"
-for u in nexus-v3-agent nexus-v3-mcp nexus-v3-registry nexus-v3-eu-broker nexus-v3-cn-broker nexus-chatgpt-remote nexus-v5-agent nexus-v5-direct; do
+for u in nexus-v3-agent nexus-v3-broker nexus-v3-mcp nexus-v3-registry nexus-v3-eu-broker nexus-v3-cn-broker nexus-chatgpt-remote nexus-v5-agent nexus-v5-direct nexus-v5-eu-broker nexus-v5-cn-broker; do
   systemctl disable --now "$u.service" >/dev/null 2>&1 || true
 done
 systemctl restart nexus-v5-api.service
