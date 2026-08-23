@@ -23,6 +23,12 @@
       "ssh": "root@100.86.0.66",
       "devspace": true
     },
+    "elitebook": {
+      "mode": "direct",
+      "endpoint": "http://100.118.181.6:18505",
+      "ssh": "bing@100.118.181.6",
+      "devspace": true
+    },
     "n1": {
       "mode": "ssh",
       "ssh": "root@100.90.67.12",
@@ -32,6 +38,7 @@
   "aliases": {
     "oracle-amd": "oracle",
     "victus-wsl": "victus",
+    "elitebook-wsl": "elitebook",
     "tier2-p-login-3": "vsc",
     "vsc-tier2": "vsc",
     "istoreos": "n1"
