@@ -36,7 +36,10 @@ if [ -d "$ROOT/runtime/devspace/node_modules" ] && \
    [ -f "$ROOT/runtime/devspace/package-lock.json" ] && \
    [ -f "$SRC/runtime/devspace/package-lock.json" ] && \
    cmp -s "$ROOT/runtime/devspace/package-lock.json" "$SRC/runtime/devspace/package-lock.json"; then
-  KEEP_DEVSPACE_DEPS="$TMP/devspace-node_modules"
+  # Keep dependencies beside ROOT so mv is a same-filesystem rename.
+  # Using $TMP can turn mv into a very slow cross-filesystem copy on HPC.
+  KEEP_DEVSPACE_DEPS="$ROOT/.devspace-node_modules.keep.$$"
+  rm -rf "$KEEP_DEVSPACE_DEPS"
   mv "$ROOT/runtime/devspace/node_modules" "$KEEP_DEVSPACE_DEPS"
 fi
 rm -rf "$ROOT/nexus_v5" "$ROOT/nexus_v3" "$ROOT/runtime"
