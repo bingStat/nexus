@@ -15,6 +15,12 @@ ssh_cmd() {
     -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN" \
     "$target" "$@"
 }
+ssh_stdin() {
+  target="$1"; shift
+  ssh -T -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN" \
+    "$target" "$@"
+}
 scp_to() {
   src="$1" target="$2" dst="$3"
   scp -q -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
@@ -66,6 +72,24 @@ VSC_LOG="/user/leuven/356/vsc35603/.local/state/tailscale/tailscaled.log"
 VSC_TOKEN="/tmp/nexus-v5-token.$$"
 scp_to "$TOKEN" "$VSC_TARGET" "$VSC_TOKEN"
 ssh_cmd "$VSC_TARGET" "bash -lc 'set -e; if [ ! -x $VSC_NODE/bin/node ]; then mkdir -p $VSC_BASE; curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz -o /tmp/node-v22.22.0.tar.xz; tar -xJf /tmp/node-v22.22.0.tar.xz -C $VSC_BASE; mv $VSC_BASE/node-v22.22.0-linux-x64 $VSC_NODE; rm -f /tmp/node-v22.22.0.tar.xz; fi; module load Python/3.11.5-GCCcore-13.2.0 >/dev/null 2>&1; PY=\$(command -v python3); export PATH=$VSC_NODE/bin:\$PATH; curl -fsSL https://raw.githubusercontent.com/bingStat/nexus/$REF/deploy/nexus-v5.sh | PYTHON=\$PY NEXUS_ROLE=worker NEXUS_DEVICE_ID=vsc NEXUS_BIND=127.0.0.1 NEXUS_REF=$REF NEXUS_TOKEN_SOURCE=$VSC_TOKEN NEXUS_INSTALL_ROOT=$VSC_BASE/current NEXUS_CONFIG_ROOT=$VSC_BASE/config NEXUS_STATE_ROOT=$VSC_BASE/state NEXUS_DEVSPACE_ALLOWED_ROOTS=/data/leuven/356/vsc35603 NEXUS_NODE=$VSC_NODE/bin/node NEXUS_NPM=$VSC_NODE/bin/npm NEXUS_RETIRE_V3=0 sh; rm -f $VSC_TOKEN; if ! $VSC_TS --socket=$VSC_SOCKET serve --bg --tcp=18505 tcp://127.0.0.1:18505; then : > $VSC_LOG; $VSC_TS --socket=$VSC_SOCKET serve --bg --tcp=18505 tcp://127.0.0.1:18505; fi'"
+cat <<'VSC_WATCHDOG' | ssh_stdin "$VSC_TARGET" "cat > $VSC_BASE/ensure-worker.sh"
+#!/bin/sh
+set -eu
+BASE=/data/leuven/356/vsc35603/services/nexus-v5
+HEALTH=http://127.0.0.1:18505/v5/health
+
+if curl -fsS --max-time 2 "$HEALTH" >/dev/null 2>&1; then
+  exit 0
+fi
+
+mkdir -p "$BASE/state"
+if command -v setsid >/dev/null 2>&1; then
+  setsid -f "$BASE/current/run-worker.sh" >"$BASE/state/worker.log" 2>&1 </dev/null
+else
+  "$BASE/current/run-worker.sh" >"$BASE/state/worker.log" 2>&1 </dev/null &
+fi
+VSC_WATCHDOG
+ssh_cmd "$VSC_TARGET" "chmod 755 $VSC_BASE/ensure-worker.sh; { crontab -l 2>/dev/null | grep -v -F '$VSC_BASE/current/run-worker.sh' | grep -v -F '$VSC_BASE/ensure-worker.sh' || true; printf '@reboot $VSC_BASE/ensure-worker.sh >/dev/null 2>&1\n* * * * * $VSC_BASE/ensure-worker.sh >/dev/null 2>&1\n'; } | crontab -; $VSC_BASE/ensure-worker.sh"
 
 wait_health http://100.72.134.105:18505
 wait_health http://100.86.0.66:18505
