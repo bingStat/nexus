@@ -204,6 +204,47 @@ async function verifyRefreshToken(token, secret, apiKey = '') {
   }
 }
 
+
+function oauthPrimarySigningSecret(env, password) {
+  return env.NEXUS_OAUTH_SIGNING_SECRET || env.NEXUS_CHATGPT_API_KEY || password;
+}
+
+function oauthVerificationSecrets(env, password) {
+  return [env.NEXUS_OAUTH_SIGNING_SECRET || '', env.NEXUS_CHATGPT_API_KEY || '', password || '']
+    .filter((value, index, all) => value && all.indexOf(value) === index);
+}
+
+async function verifyAccessTokenForEnv(token, env, password) {
+  if (!token) return false;
+  const apiKey = env.NEXUS_CHATGPT_API_KEY || '';
+  if (apiKey && token === apiKey) return true;
+  for (const secret of oauthVerificationSecrets(env, password)) {
+    if (await verifyAccessToken(token, secret)) return true;
+  }
+  return false;
+}
+
+async function verifyRefreshTokenForEnv(token, env, password) {
+  for (const secret of oauthVerificationSecrets(env, password)) {
+    const payload = await verifyRefreshToken(token, secret);
+    if (payload) return payload;
+  }
+  return null;
+}
+
+function oauthBearerChallenge(origin, invalidToken = false) {
+  const fields = [
+    'Bearer realm="Nexus MCP"',
+    `resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+    'scope="mcp fleet devspace"',
+  ];
+  if (invalidToken) {
+    fields.push('error="invalid_token"');
+    fields.push('error_description="OAuth access token is invalid or expired"');
+  }
+  return fields.join(', ');
+}
+
 // ---------------------------------------------------------------------------
 // HTML Templates
 // ---------------------------------------------------------------------------
@@ -417,7 +458,7 @@ async function serveR2(env, key, cacheControl = 'public, max-age=60') {
   const obj = await env.NEXUS_BUCKET.get(key);
   if (!obj) return new Response(`R2 object not found: ${key}`, { status: 404, headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }) });
   return new Response(await obj.arrayBuffer(), {
-    headers: securityHeaders({ 'Content-Type': contentTypeForObject(key), 'Cache-Control': cacheControl, 'X-Powered-By': 'Nexus v3 Remote Control' }),
+    headers: securityHeaders({ 'Content-Type': contentTypeForObject(key), 'Cache-Control': cacheControl, 'X-Powered-By': 'Nexus v5 Control Plane' }),
   });
 }
 
@@ -452,7 +493,7 @@ export default {
     // -----------------------------------------------------------------------
     // OAuth 2.0 Discovery Endpoints (RFC 8414 & Protected Resource Metadata)
     // -----------------------------------------------------------------------
-    if (path === '/.well-known/oauth-protected-resource') {
+    if (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp') {
       return new Response(JSON.stringify({
         resource: `${origin}/mcp`,
         authorization_servers: [origin],
@@ -627,7 +668,7 @@ export default {
           }
         }
 
-        const oauthSigningSecret = env.NEXUS_CHATGPT_API_KEY || password;
+        const oauthSigningSecret = oauthPrimarySigningSecret(env, password);
         const accessToken = await createAccessToken(oauthSigningSecret, authPayload.client_id);
         const refreshToken = await createRefreshToken(oauthSigningSecret, authPayload.client_id);
 
@@ -645,14 +686,14 @@ export default {
 
       if (grantType === 'refresh_token') {
         const refreshToken = formParams.get('refresh_token') || '';
-        const refreshPayload = await verifyRefreshToken(refreshToken, password, env.NEXUS_CHATGPT_API_KEY || '');
+        const refreshPayload = await verifyRefreshTokenForEnv(refreshToken, env, password);
         if (!refreshPayload) {
           return new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Refresh token is invalid or expired' }), {
             status: 400,
             headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
           });
         }
-        const oauthSigningSecret = env.NEXUS_CHATGPT_API_KEY || password;
+        const oauthSigningSecret = oauthPrimarySigningSecret(env, password);
         const accessToken = await createAccessToken(oauthSigningSecret, refreshPayload.sub);
         const newRefreshToken = await createRefreshToken(oauthSigningSecret, refreshPayload.sub);
         return new Response(JSON.stringify({
@@ -684,16 +725,28 @@ export default {
         bearer = authHeader.slice(7).trim();
       }
 
-      const isValidToken = await verifyAccessToken(bearer, password, env.NEXUS_CHATGPT_API_KEY || '');
+      const isValidToken = await verifyAccessTokenForEnv(bearer, env, password);
       if (!isValidToken) {
+        const invalidToken = Boolean(bearer);
         return new Response(JSON.stringify({
           jsonrpc: '2.0',
-          error: { code: -32000, message: 'Unauthorized: valid OAuth Bearer token required' },
+          error: {
+            code: -32000,
+            message: 'Authentication required: reconnect Nexus',
+            data: {
+              auth_required: true,
+              reconnect: true,
+              reason: invalidToken ? 'invalid_token' : 'missing_token',
+              resource_metadata: `${origin}/.well-known/oauth-protected-resource`,
+              authorization_server: origin,
+            },
+          },
         }), {
           status: 401,
           headers: corsHeaders({
             'Content-Type': 'application/json; charset=utf-8',
-            'WWW-Authenticate': `Bearer realm="Nexus MCP", resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+            'Cache-Control': 'no-store',
+            'WWW-Authenticate': oauthBearerChallenge(origin, invalidToken),
           }),
         });
       }
@@ -714,7 +767,7 @@ export default {
         }
         return new Response(JSON.stringify({
           name: 'Nexus',
-          version: '3.2.2',
+          version: '5.0.0',
           protocolVersion: '2024-11-05',
           transport: 'streamable-http',
         }), {
@@ -749,9 +802,9 @@ export default {
             id,
             result: {
               protocolVersion: '2024-11-05',
-              serverInfo: { name: 'Nexus', version: '3.2.2' },
+              serverInfo: { name: 'Nexus', version: '5.0.0' },
               capabilities: { tools: { listChanged: false } },
-              instructions: 'Nexus is the canonical production control interface. When the user says Nexus or @Nexus, use this namespace first. Determine availability from tools registered in the current turn, not prior failures. Call self_test to distinguish client/tool-routing problems from Registry/Broker/Agent failures. Never substitute the target device.',
+              instructions: 'Nexus is the canonical production control interface. When the user says Nexus or @Nexus, use this namespace first. Call self_test to distinguish OAuth/client-routing failures from v5 route or device failures. If authentication is invalid, treat it as a reconnect-required condition rather than as device downtime. Never substitute the target device.',
             },
           }), {
             headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
@@ -774,7 +827,7 @@ export default {
               tools: [
                 {
                   name: 'self_test',
-                  description: 'Diagnose the Nexus production control path: Registry, EU/CN Brokers, and Agent presence. Use this before substituting any fallback control path.',
+                  description: 'Check Nexus v5 route configuration and device reachability. Use this to distinguish control-plane/device failures from a client authentication problem.',
                   inputSchema: { type: 'object', properties: {} },
                 },
                 {
@@ -796,7 +849,7 @@ export default {
                 },
                 {
                   name: 'fleet_status',
-                  description: 'Get real-time operational status for all approved cluster nodes and regional brokers.',
+                  description: 'Get real-time operational status for configured Nexus v5 logical devices.',
                   inputSchema: { type: 'object', properties: {} },
                 },
                 {
@@ -904,19 +957,7 @@ export default {
                     },
                   },
                 },
-                {
 
-                  name: 'get_job',
-                  description: 'Query the execution result of an asynchronous Nexus job by ID.',
-                  inputSchema: {
-                    type: 'object',
-                    required: ['job_id', 'region'],
-                    properties: {
-                      job_id: { type: 'string' },
-                      region: { type: 'string', enum: ['eu', 'cn'] },
-                    },
-                  },
-                },
               ],
             },
           }), {
@@ -944,11 +985,17 @@ export default {
             if (body) opts.body = JSON.stringify(body);
             const resp = await fetch(`${apiBase}${endpoint}`, opts);
             const text = await resp.text();
+            let payload;
             try {
-              return JSON.parse(text);
+              payload = JSON.parse(text);
             } catch {
-              return { status: resp.status, text };
+              payload = { text };
             }
+            if (!resp.ok) {
+              const detail = payload && payload.error ? payload.error : `HTTP ${resp.status}`;
+              throw new Error(`Nexus v5 upstream ${resp.status}: ${detail}`);
+            }
+            return payload;
           };
 
           try {
@@ -1013,8 +1060,6 @@ export default {
                 input: { workspaceId: args.workspace_id, sessionId: args.session_id, chars: args.chars || '' },
                 wait_seconds: 20,
               });
-            } else if (toolName === 'get_job') {
-              resultData = await apiFetch(`/api/jobs/${encodeURIComponent(args.region)}/${encodeURIComponent(args.job_id)}`);
             } else {
               return new Response(JSON.stringify({
                 jsonrpc: '2.0',
@@ -1163,7 +1208,7 @@ export default {
         const brokers = Array.isArray(payload) ? undefined : payload.brokers;
         const total = Array.isArray(payload) ? devices.length : payload.total;
         return new Response(JSON.stringify({ source: 'nexus-chatgpt-remote', updated_at: new Date().toISOString(), devices, counts, brokers, total }), {
-          headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v3 Remote Control' }),
+          headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v5 Control Plane' }),
         });
       } catch (error) {
         return new Response(JSON.stringify({ error: 'live status source unavailable' }), {
@@ -1183,7 +1228,7 @@ export default {
     const obj = await env.NEXUS_BUCKET.get(r2Key);
     if (!obj) return new Response(`R2 object not found: ${r2Key}`, { status: 404, headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }) });
     return new Response(await obj.arrayBuffer(), {
-      headers: securityHeaders({ 'Content-Type': contentType, 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v3 Remote Control' }),
+      headers: securityHeaders({ 'Content-Type': contentType, 'Cache-Control': 'no-store', 'X-Powered-By': 'Nexus v5 Control Plane' }),
     });
   },
 };

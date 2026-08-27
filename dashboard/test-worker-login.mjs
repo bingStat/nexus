@@ -15,6 +15,7 @@ const env = {
   NEXUS_PASSWORD: 'correct horse battery staple',
   NEXUS_STATUS_SOURCE_URL: 'https://nexus-global-api.bings.app/api/status',
   NEXUS_CHATGPT_API_KEY: 'test-api-key',
+  NEXUS_OAUTH_SIGNING_SECRET: 'stable-oauth-signing-secret',
   NEXUS_MCP_BACKEND_URL: 'https://nexus-global-api.bings.app',
   NEXUS_BUCKET: {
     async get(key) {
@@ -29,7 +30,7 @@ const nativeFetch = globalThis.fetch;
 globalThis.fetch = async (url, options = {}) => {
   const urlStr = String(url);
   if (urlStr === env.NEXUS_STATUS_SOURCE_URL) {
-    assert.equal(options.headers.get?.('Authorization') || options.headers?.Authorization, 'Bearer test-api-key');
+    assert.equal(options.headers.get?.('Authorization') || options.headers?.Authorization, `Bearer ${env.NEXUS_CHATGPT_API_KEY}`);
     return new Response(JSON.stringify({
       counts: { online: 6, degraded: 0, offline: 0, unknown: 0 },
       devices: [{ device_id: 'oracle', runtime_status: 'online' }],
@@ -37,12 +38,12 @@ globalThis.fetch = async (url, options = {}) => {
   }
   if (urlStr === 'https://nexus-global-api.bings.app/api/self-test') {
     return new Response(JSON.stringify({
-      status: 'ok', service: 'nexus', version: '3.2.2',
-      components: { registry: { status: 'ok' }, broker_eu: { status: 'ok' }, broker_cn: { status: 'ok' }, presence: { status: 'ok', reachable_agents: 6 } },
+      status: 'ok', service: 'nexus-v5', version: '5.0.0',
+      devices: [{ device_id: 'oracle', status: 'online' }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   if (urlStr === 'https://nexus-global-api.bings.app/mcp') {
-    assert.equal(options.headers.get?.('Authorization') || options.headers?.Authorization, 'Bearer test-api-key');
+    assert.equal(options.headers.get?.('Authorization') || options.headers?.Authorization, `Bearer ${env.NEXUS_CHATGPT_API_KEY}`);
     return new Response(JSON.stringify({
       jsonrpc: '2.0',
       result: { tools: [{ name: 'list_devices' }] }
@@ -65,6 +66,9 @@ response = await request('/.well-known/oauth-protected-resource');
 assert.equal(response.status, 200);
 const protectedMeta = await response.json();
 assert.equal(protectedMeta.resource, 'https://nexus.bings.app/mcp');
+response = await request('/.well-known/oauth-protected-resource/mcp');
+assert.equal(response.status, 200);
+assert.equal((await response.json()).resource, 'https://nexus.bings.app/mcp');
 
 response = await request('/.well-known/oauth-authorization-server');
 assert.equal(response.status, 200);
@@ -150,9 +154,12 @@ assert.ok(tokenResp.refresh_token.startsWith('nxr_'));
 const accessToken = tokenResp.access_token;
 const refreshToken = tokenResp.refresh_token;
 
-// OAuth tokens are machine-signed and must survive dashboard-password rotation.
+// OAuth tokens use a dedicated signing secret and must survive both dashboard-password
+// and backend API-key rotation. These credentials are deliberately independent.
 const originalPassword = env.NEXUS_PASSWORD;
+const originalApiKey = env.NEXUS_CHATGPT_API_KEY;
 env.NEXUS_PASSWORD = 'rotated dashboard password';
+env.NEXUS_CHATGPT_API_KEY = 'rotated-backend-api-key';
 let rotatedAuth = await request('/mcp', {
   method: 'POST',
   headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -173,12 +180,24 @@ assert.equal(response.status, 200);
 const refreshedResp = await response.json();
 assert.ok(refreshedResp.access_token.startsWith('nxt_'));
 env.NEXUS_PASSWORD = originalPassword;
+env.NEXUS_CHATGPT_API_KEY = originalApiKey;
 
-// 9. MCP Request with Invalid Token -> 401
+// 9. MCP Request with Invalid Token -> 401 reconnect challenge
 response = await request('/mcp', {
   headers: { 'Authorization': 'Bearer bad_token' }
 });
 assert.equal(response.status, 401);
+const invalidChallenge = response.headers.get('www-authenticate') || '';
+assert.match(invalidChallenge, /error="invalid_token"/);
+assert.match(invalidChallenge, /resource_metadata="https:\/\/nexus\.bings\.app\/\.well-known\/oauth-protected-resource"/);
+const invalidBody = await response.json();
+assert.equal(invalidBody.error.data.reconnect, true);
+assert.equal(invalidBody.error.data.reason, 'invalid_token');
+
+response = await request('/mcp');
+assert.equal(response.status, 401);
+const missingChallenge = response.headers.get('www-authenticate') || '';
+assert.doesNotMatch(missingChallenge, /error="invalid_token"/);
 
 // 10. MCP Request with Valid OAuth Access Token -> Proxied
 response = await request('/mcp', {
@@ -191,9 +210,10 @@ response = await request('/mcp', {
 });
 assert.equal(response.status, 200);
 const mcpJson = await response.json();
-assert.equal(mcpJson.result.tools.length, 12);
+assert.equal(mcpJson.result.tools.length, 11);
 assert.equal(mcpJson.result.tools[0].name, 'self_test');
 assert.ok(mcpJson.result.tools.some((tool) => tool.name === 'execute_command'));
+assert.ok(!mcpJson.result.tools.some((tool) => tool.name === 'get_job'));
 
 // 10b. MCP self_test dispatches to the canonical REST control plane
 response = await request('/mcp', {

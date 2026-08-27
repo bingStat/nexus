@@ -36,6 +36,7 @@ def test_dashboard_password_is_not_a_wrangler_plaintext_var() -> None:
     config = WRANGLER.read_text(encoding="utf-8")
     assert "NEXUS_PASSWORD" not in config
     assert "NEXUS_CHATGPT_API_KEY" not in config
+    assert "NEXUS_OAUTH_SIGNING_SECRET" not in config
     assert 'NEXUS_STATUS_SOURCE_URL = "https://nexus-global-api.bings.app/api/dashboard-status"' in config
     assert "AUTH_USER" not in config
 
@@ -64,4 +65,15 @@ def test_login_template_has_no_mojibake_placeholders() -> None:
     assert "????" not in worker
     assert "&#30331;&#24405; Nexus" in worker
     assert "&#38598;&#32676;&#25511;&#21046;&#20013;&#24515;" in worker
+
+def test_mcp_auth_reconnect_contract_and_v5_surface() -> None:
+    source = WORKER.read_text(encoding="utf-8")
+    assert "NEXUS_OAUTH_SIGNING_SECRET" in source
+    assert 'error="invalid_token"' in source
+    assert 'reconnect: true' in source
+    assert "oauth-protected-resource/mcp" in source
+    assert "version: '5.0.0'" in source
+    assert "name: 'self_test'" in source
+    assert "name: 'get_job'" not in source
+    assert "Nexus v5 upstream" in source
 
