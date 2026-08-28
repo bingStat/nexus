@@ -165,7 +165,7 @@ def openapi_document() -> dict[str, Any]:
                 "responses": {"200": {"description": "Job status and result"}},
             }},
         },
-        "components": {"securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}}},
+        "components": {"schemas": {}, "securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}}},
     }
 
 
