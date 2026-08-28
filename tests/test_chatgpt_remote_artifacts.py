@@ -13,15 +13,15 @@ def test_chatgpt_remote_openapi_is_valid() -> None:
     assert {
         "selfTest", "getFleetStatus", "listDevices", "getDevice", "executeCommand", "executeBatch",
         "openWorkspace", "readWorkspace", "applyWorkspacePatch", "execWorkspaceCommand",
-        "writeWorkspaceStdin", "executeRuntimeOperation", "getJob",
+        "writeWorkspaceStdin", "getJob",
     } <= {
         operation["operationId"]
         for methods in spec["paths"].values()
         for operation in methods.values()
         if isinstance(operation, dict) and "operationId" in operation
     }
-    runtime = spec["paths"]["/api/runtime"]["post"]
-    assert "workspace.open" in runtime["requestBody"]["content"]["application/json"]["schema"]["properties"]["operation"]["enum"]
+    assert "/api/runtime" not in spec["paths"]
+    assert spec["servers"][0]["url"] == "https://nexus-global-api.bings.app"
 
 
 def test_chatgpt_remote_installer_deploys_mcp_and_action_api() -> None:
@@ -82,3 +82,21 @@ def test_dashboard_uses_standard_roles_and_live_runtime_capabilities() -> None:
     assert "v3 Broker (EU)" in html and "v3 Broker (CN)" in html
     assert "EU compute target" not in html
     assert "pending agent" not in html
+
+
+def test_v5_action_api_mirrors_nexus_mcp_tools() -> None:
+    from nexus_v5.api import openapi_document
+
+    spec = openapi_document()
+    operation_ids = {
+        operation["operationId"]
+        for methods in spec["paths"].values()
+        for operation in methods.values()
+        if isinstance(operation, dict) and "operationId" in operation
+    }
+    assert {
+        "listDevices", "getDevice", "getFleetStatus", "executeCommand", "executeBatch",
+        "openWorkspace", "readWorkspace", "applyWorkspacePatch", "execWorkspaceCommand",
+        "writeWorkspaceStdin", "getJob",
+    } <= operation_ids
+    assert "executeRuntimeOperation" not in operation_ids

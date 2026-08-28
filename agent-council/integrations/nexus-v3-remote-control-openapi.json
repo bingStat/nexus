@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nexus",
-    "version": "3.2.2",
-    "description": "Canonical production interface for the Nexus-managed device fleet. If the user explicitly says Nexus or @Nexus, route through this API before any developer or fallback remote-control path. Tool availability is independent of backend health; use selfTest to diagnose the production control path. Commands and workspace operations always target one explicitly named device."
+    "version": "5.0.0",
+    "description": "Minimal multi-device control plane. ChatGPT chooses the logical device; Nexus uses its cached route without per-command probing."
   },
   "servers": [
     {
@@ -19,18 +19,7 @@
     "/api/devices": {
       "get": {
         "operationId": "listDevices",
-        "summary": "List Nexus devices and runtime capabilities",
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "approved"
-            }
-          }
-        ],
+        "summary": "List configured Nexus devices",
         "responses": {
           "200": {
             "description": "Device list"
@@ -41,7 +30,7 @@
     "/api/devices/{device_id}": {
       "get": {
         "operationId": "getDevice",
-        "summary": "Get one Nexus device and runtime capabilities",
+        "summary": "Get one Nexus device",
         "parameters": [
           {
             "name": "device_id",
@@ -54,7 +43,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Device identity"
+            "description": "Device"
           }
         }
       }
@@ -62,10 +51,10 @@
     "/api/self-test": {
       "get": {
         "operationId": "selfTest",
-        "summary": "Test Registry, EU/CN Brokers, and Agent presence without executing on a device",
+        "summary": "Check Nexus v5 route configuration and device reachability",
         "responses": {
           "200": {
-            "description": "Nexus control-path diagnostic"
+            "description": "Self-test"
           }
         }
       }
@@ -73,7 +62,7 @@
     "/api/status": {
       "get": {
         "operationId": "getFleetStatus",
-        "summary": "Get current device runtime states and Regional Broker health",
+        "summary": "Get explicit fleet health",
         "responses": {
           "200": {
             "description": "Fleet status"
@@ -81,52 +70,10 @@
         }
       }
     },
-    "/api/commands/batch": {
-      "post": {
-        "operationId": "executeBatch",
-        "summary": "Execute up to 16 shell jobs concurrently on explicitly named devices",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "jobs"
-                ],
-                "properties": {
-                  "jobs": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 16,
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "device_id",
-                        "command"
-                      ]
-                    }
-                  },
-                  "wait_seconds": {
-                    "type": "integer",
-                    "default": 20
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Ordered batch results"
-          }
-        }
-      }
-    },
     "/api/commands": {
       "post": {
         "operationId": "executeCommand",
-        "summary": "Execute one shell command on one named Nexus device",
+        "summary": "Execute one command on one logical device",
         "requestBody": {
           "required": true,
           "content": {
@@ -150,12 +97,6 @@
                     "default": 30000,
                     "minimum": 1000,
                     "maximum": 86400000
-                  },
-                  "wait_seconds": {
-                    "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
                   }
                 }
               }
@@ -164,7 +105,60 @@
         },
         "responses": {
           "200": {
-            "description": "Job result or accepted job"
+            "description": "Command result"
+          }
+        }
+      }
+    },
+    "/api/commands/batch": {
+      "post": {
+        "operationId": "executeBatch",
+        "summary": "Execute up to 16 commands concurrently",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jobs"
+                ],
+                "properties": {
+                  "jobs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "device_id",
+                        "command"
+                      ],
+                      "properties": {
+                        "device_id": {
+                          "type": "string"
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "timeout_ms": {
+                          "type": "integer",
+                          "default": 30000,
+                          "minimum": 1000,
+                          "maximum": 86400000
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch results"
           }
         }
       }
@@ -203,11 +197,11 @@
                     "type": "string",
                     "default": ""
                   },
-                  "wait_seconds": {
+                  "timeout_ms": {
                     "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
                   }
                 }
               }
@@ -256,11 +250,11 @@
                     "minimum": 1,
                     "maximum": 20000
                   },
-                  "wait_seconds": {
+                  "timeout_ms": {
                     "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
                   }
                 }
               }
@@ -300,11 +294,11 @@
                   "patch": {
                     "type": "string"
                   },
-                  "wait_seconds": {
+                  "timeout_ms": {
                     "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
                   }
                 }
               }
@@ -362,11 +356,11 @@
                     "minimum": 1,
                     "maximum": 100000
                   },
-                  "wait_seconds": {
+                  "timeout_ms": {
                     "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
                   }
                 }
               }
@@ -416,11 +410,11 @@
                     "minimum": 0,
                     "maximum": 300000
                   },
-                  "wait_seconds": {
+                  "timeout_ms": {
                     "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
+                    "default": 30000,
+                    "minimum": 1000,
+                    "maximum": 86400000
                   }
                 }
               }
@@ -434,70 +428,10 @@
         }
       }
     },
-    "/api/runtime": {
-      "post": {
-        "operationId": "executeRuntimeOperation",
-        "summary": "Run a structured DevSpace workspace operation on one named Nexus device",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "device_id",
-                  "operation",
-                  "input"
-                ],
-                "properties": {
-                  "device_id": {
-                    "type": "string"
-                  },
-                  "operation": {
-                    "type": "string",
-                    "enum": [
-                      "workspace.open",
-                      "workspace.read",
-                      "workspace.apply_patch",
-                      "workspace.exec",
-                      "workspace.write_stdin"
-                    ]
-                  },
-                  "input": {
-                    "type": "object"
-                  },
-                  "timeout_ms": {
-                    "type": "integer",
-                    "default": 30000,
-                    "minimum": 1000,
-                    "maximum": 86400000
-                  },
-                  "wait_seconds": {
-                    "type": "integer",
-                    "default": 20,
-                    "minimum": 0,
-                    "maximum": 120
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Workspace job result or accepted job"
-          },
-          "502": {
-            "description": "Target does not expose the DevSpace runtime or routing failed"
-          }
-        }
-      }
-    },
     "/api/jobs/{region}/{job_id}": {
       "get": {
         "operationId": "getJob",
-        "summary": "Read a Nexus job from an EU or CN Broker",
+        "summary": "Get an asynchronous Nexus broker job by ID",
         "parameters": [
           {
             "name": "region",
@@ -522,14 +456,13 @@
         ],
         "responses": {
           "200": {
-            "description": "Job status and structured result"
+            "description": "Job status and result"
           }
         }
       }
     }
   },
   "components": {
-    "schemas": {},
     "securitySchemes": {
       "BearerAuth": {
         "type": "http",
