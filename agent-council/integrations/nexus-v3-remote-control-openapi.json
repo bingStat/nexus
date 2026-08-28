@@ -3,7 +3,7 @@
   "info": {
     "title": "Nexus",
     "version": "3.2.2",
-    "description": "Canonical production interface for the Nexus-managed device fleet. If the user explicitly says Nexus or @Nexus, route through this interface before any developer or fallback remote-control path. Tool availability is independent of backend health; use selfTest to diagnose Registry, Brokers, and Agent presence."
+    "description": "Canonical production interface for the Nexus-managed device fleet. If the user explicitly says Nexus or @Nexus, route through this API before any developer or fallback remote-control path. Tool availability is independent of backend health; use selfTest to diagnose the production control path. Commands and workspace operations always target one explicitly named device."
   },
   "servers": [
     {
@@ -165,6 +165,271 @@
         "responses": {
           "200": {
             "description": "Job result or accepted job"
+          }
+        }
+      }
+    },
+    "/api/workspaces/open": {
+      "post": {
+        "operationId": "openWorkspace",
+        "summary": "Open an upstream DevSpace checkout or managed worktree on one named device",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "device_id",
+                  "path"
+                ],
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "checkout",
+                      "worktree"
+                    ],
+                    "default": "checkout"
+                  },
+                  "base_ref": {
+                    "type": "string",
+                    "default": ""
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace open result"
+          }
+        }
+      }
+    },
+    "/api/workspaces/read": {
+      "post": {
+        "operationId": "readWorkspace",
+        "summary": "Read a file through an opened upstream DevSpace workspace",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "device_id",
+                  "workspace_id",
+                  "path"
+                ],
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "workspace_id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20000
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace read result"
+          }
+        }
+      }
+    },
+    "/api/workspaces/apply-patch": {
+      "post": {
+        "operationId": "applyWorkspacePatch",
+        "summary": "Apply a Codex-style patch through upstream DevSpace on one named device",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "device_id",
+                  "workspace_id",
+                  "patch"
+                ],
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "workspace_id": {
+                    "type": "string"
+                  },
+                  "patch": {
+                    "type": "string"
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace patch result"
+          }
+        }
+      }
+    },
+    "/api/workspaces/exec": {
+      "post": {
+        "operationId": "execWorkspaceCommand",
+        "summary": "Run a command inside an opened upstream DevSpace workspace",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "device_id",
+                  "workspace_id",
+                  "command"
+                ],
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "workspace_id": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "working_directory": {
+                    "type": "string",
+                    "default": ""
+                  },
+                  "tty": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "yield_time_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 300000
+                  },
+                  "max_output_tokens": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace command result or process session"
+          }
+        }
+      }
+    },
+    "/api/workspaces/stdin": {
+      "post": {
+        "operationId": "writeWorkspaceStdin",
+        "summary": "Poll or interact with a running upstream DevSpace process session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "device_id",
+                  "workspace_id",
+                  "session_id"
+                ],
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "workspace_id": {
+                    "type": "string"
+                  },
+                  "session_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "chars": {
+                    "type": "string",
+                    "default": ""
+                  },
+                  "yield_time_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 300000
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 0,
+                    "maximum": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace process session result"
           }
         }
       }

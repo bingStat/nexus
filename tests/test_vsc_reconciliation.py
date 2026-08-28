@@ -136,4 +136,7 @@ def test_remote_api_exposes_status_and_batch() -> None:
         for operation in methods.values()
         if isinstance(operation, dict) and "operationId" in operation
     }
-    assert {"getFleetStatus", "executeBatch", "executeCommand", "executeRuntimeOperation"} <= operation_ids
+    assert {
+        "getFleetStatus", "executeBatch", "executeCommand", "openWorkspace", "readWorkspace",
+        "applyWorkspacePatch", "execWorkspaceCommand", "writeWorkspaceStdin", "executeRuntimeOperation",
+    } <= operation_ids

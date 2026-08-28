@@ -6,7 +6,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .remote_control import execute_batch, execute_command, fleet_status, get_device, get_job, list_devices, self_test, submit_operation
+from .remote_control import (
+    apply_workspace_patch,
+    exec_workspace_command,
+    execute_batch,
+    execute_command,
+    fleet_status,
+    get_device,
+    get_job,
+    list_devices,
+    open_workspace,
+    read_workspace,
+    self_test,
+    submit_operation,
+    write_workspace_stdin,
+)
 
 VERSION = "3.2.2"
 
@@ -20,6 +34,106 @@ def chatgpt_api_key() -> str:
 
 def public_base_url() -> str:
     return os.getenv("NEXUS_CHATGPT_PUBLIC_BASE_URL", "http://127.0.0.1:18131").rstrip("/")
+
+
+def _workspace_action_paths() -> dict[str, Any]:
+    """OpenAPI mirrors of the five DevSpace tools exposed by the Nexus MCP server."""
+    wait_seconds = {"type": "integer", "default": 20, "minimum": 0, "maximum": 120}
+    return {
+        "/api/workspaces/open": {
+            "post": {
+                "operationId": "openWorkspace",
+                "summary": "Open an upstream DevSpace checkout or managed worktree on one named device",
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                    "type": "object", "additionalProperties": False, "required": ["device_id", "path"],
+                    "properties": {
+                        "device_id": {"type": "string"},
+                        "path": {"type": "string"},
+                        "mode": {"type": "string", "enum": ["checkout", "worktree"], "default": "checkout"},
+                        "base_ref": {"type": "string", "default": ""},
+                        "wait_seconds": wait_seconds,
+                    },
+                }}}},
+                "responses": {"200": {"description": "Workspace open result"}},
+            }
+        },
+        "/api/workspaces/read": {
+            "post": {
+                "operationId": "readWorkspace",
+                "summary": "Read a file through an opened upstream DevSpace workspace",
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["device_id", "workspace_id", "path"],
+                    "properties": {
+                        "device_id": {"type": "string"},
+                        "workspace_id": {"type": "string"},
+                        "path": {"type": "string"},
+                        "offset": {"type": "integer", "minimum": 0},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 20000},
+                        "wait_seconds": wait_seconds,
+                    },
+                }}}},
+                "responses": {"200": {"description": "Workspace read result"}},
+            }
+        },
+        "/api/workspaces/apply-patch": {
+            "post": {
+                "operationId": "applyWorkspacePatch",
+                "summary": "Apply a Codex-style patch through upstream DevSpace on one named device",
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["device_id", "workspace_id", "patch"],
+                    "properties": {
+                        "device_id": {"type": "string"},
+                        "workspace_id": {"type": "string"},
+                        "patch": {"type": "string"},
+                        "wait_seconds": wait_seconds,
+                    },
+                }}}},
+                "responses": {"200": {"description": "Workspace patch result"}},
+            }
+        },
+        "/api/workspaces/exec": {
+            "post": {
+                "operationId": "execWorkspaceCommand",
+                "summary": "Run a command inside an opened upstream DevSpace workspace",
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["device_id", "workspace_id", "command"],
+                    "properties": {
+                        "device_id": {"type": "string"},
+                        "workspace_id": {"type": "string"},
+                        "command": {"type": "string"},
+                        "working_directory": {"type": "string", "default": ""},
+                        "tty": {"type": "boolean", "default": False},
+                        "yield_time_ms": {"type": "integer", "minimum": 0, "maximum": 300000},
+                        "max_output_tokens": {"type": "integer", "minimum": 1, "maximum": 100000},
+                        "wait_seconds": wait_seconds,
+                    },
+                }}}},
+                "responses": {"200": {"description": "Workspace command result or process session"}},
+            }
+        },
+        "/api/workspaces/stdin": {
+            "post": {
+                "operationId": "writeWorkspaceStdin",
+                "summary": "Poll or interact with a running upstream DevSpace process session",
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["device_id", "workspace_id", "session_id"],
+                    "properties": {
+                        "device_id": {"type": "string"},
+                        "workspace_id": {"type": "string"},
+                        "session_id": {"type": "integer", "minimum": 1},
+                        "chars": {"type": "string", "default": ""},
+                        "yield_time_ms": {"type": "integer", "minimum": 0, "maximum": 300000},
+                        "wait_seconds": wait_seconds,
+                    },
+                }}}},
+                "responses": {"200": {"description": "Workspace process session result"}},
+            }
+        },
+    }
 
 
 def openapi_document() -> dict[str, Any]:
@@ -102,6 +216,7 @@ def openapi_document() -> dict[str, Any]:
                     "responses": {"200": {"description": "Job result or accepted job"}},
                 }
             },
+            **_workspace_action_paths(),
             "/api/runtime": {
                 "post": {
                     "operationId": "executeRuntimeOperation",
@@ -252,6 +367,34 @@ class Handler(BaseHTTPRequestHandler):
                         int(payload.get("wait_seconds") or 20),
                     ),
                 )
+            if parsed.path == "/api/workspaces/open":
+                return self.send_json(200, open_workspace(
+                    payload["device_id"], payload["path"], payload.get("mode") or "checkout",
+                    payload.get("base_ref") or None, int(payload.get("wait_seconds") or 20),
+                ))
+            if parsed.path == "/api/workspaces/read":
+                return self.send_json(200, read_workspace(
+                    payload["device_id"], payload["workspace_id"], payload["path"],
+                    payload.get("offset"), payload.get("limit"), int(payload.get("wait_seconds") or 20),
+                ))
+            if parsed.path == "/api/workspaces/apply-patch":
+                return self.send_json(200, apply_workspace_patch(
+                    payload["device_id"], payload["workspace_id"], payload["patch"],
+                    int(payload.get("wait_seconds") or 20),
+                ))
+            if parsed.path == "/api/workspaces/exec":
+                return self.send_json(200, exec_workspace_command(
+                    payload["device_id"], payload["workspace_id"], payload["command"],
+                    payload.get("working_directory") or None, bool(payload.get("tty", False)),
+                    payload.get("yield_time_ms"), payload.get("max_output_tokens"),
+                    int(payload.get("wait_seconds") or 20),
+                ))
+            if parsed.path == "/api/workspaces/stdin":
+                return self.send_json(200, write_workspace_stdin(
+                    payload["device_id"], payload["workspace_id"], int(payload["session_id"]),
+                    payload.get("chars") or "", payload.get("yield_time_ms"),
+                    int(payload.get("wait_seconds") or 20),
+                ))
             if parsed.path == "/api/runtime":
                 return self.send_json(
                     200,

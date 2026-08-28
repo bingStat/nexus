@@ -10,7 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_chatgpt_remote_openapi_is_valid() -> None:
     spec = json.loads((ROOT / "agent-council" / "integrations" / "nexus-v3-remote-control-openapi.json").read_text(encoding="utf-8"))
     assert spec["openapi"] == "3.1.0"
-    assert {"selfTest", "getFleetStatus", "listDevices", "getDevice", "executeCommand", "executeBatch", "executeRuntimeOperation", "getJob"} <= {
+    assert {
+        "selfTest", "getFleetStatus", "listDevices", "getDevice", "executeCommand", "executeBatch",
+        "openWorkspace", "readWorkspace", "applyWorkspacePatch", "execWorkspaceCommand",
+        "writeWorkspaceStdin", "executeRuntimeOperation", "getJob",
+    } <= {
         operation["operationId"]
         for methods in spec["paths"].values()
         for operation in methods.values()
